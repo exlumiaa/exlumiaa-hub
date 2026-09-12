@@ -109,12 +109,11 @@ local function showKeyGate(onSuccess)
     sc.Parent = pg
 
     local accent = Color3.fromRGB(120, 96, 255)
-    local accent2 = Color3.fromRGB(180, 160, 255)
 
     local overlay = Instance.new("Frame")
     overlay.Size = UDim2.fromScale(1, 1)
-    overlay.BackgroundColor3 = Color3.fromRGB(9, 10, 15)
-    overlay.BackgroundTransparency = 0.1
+    overlay.BackgroundColor3 = Color3.new(0, 0, 0)
+    overlay.BackgroundTransparency = 0.4
     overlay.BorderSizePixel = 0
     overlay.Parent = sc
 
@@ -122,106 +121,121 @@ local function showKeyGate(onSuccess)
     card.Name = "Card"
     card.AnchorPoint = Vector2.new(0.5, 0.5)
     card.Position = UDim2.fromScale(0.5, 0.5)
-    card.Size = UDim2.fromOffset(380, 340)
-    card.BackgroundColor3 = Color3.fromRGB(18, 19, 27)
+    card.Size = UDim2.fromOffset(380, 320)
+    card.BackgroundColor3 = Color3.fromRGB(30, 30, 45)
     card.BorderSizePixel = 0
     card.Parent = sc
-    Instance.new("UICorner", card).CornerRadius = UDim.new(0, 16)
-    local cardStroke = Instance.new("UIStroke", card)
+
+    local cardCorner = Instance.new("UICorner")
+    cardCorner.CornerRadius = UDim.new(0, 12)
+    cardCorner.Parent = card
+
+    local cardStroke = Instance.new("UIStroke")
     cardStroke.Color = accent
-    cardStroke.Transparency = 0.6
-    cardStroke.Thickness = 1
+    cardStroke.Thickness = 2
+    cardStroke.Parent = card
 
     local title = Instance.new("TextLabel")
-    title.Size = UDim2.new(1, 0, 0, 42)
-    title.Position = UDim2.fromOffset(0, 20)
+    title.Size = UDim2.new(1, 0, 0, 36)
+    title.Position = UDim2.new(0, 0, 0, 16)
     title.BackgroundTransparency = 1
     title.Text = "Exlumia Hub"
     title.Font = Enum.Font.GothamBold
     title.TextSize = 24
-    title.TextColor3 = Color3.fromRGB(240, 242, 250)
+    title.TextColor3 = Color3.new(1, 1, 1)
     title.Parent = card
-    local tg = Instance.new("UIGradient", title)
-    tg.Rotation = -8
-    tg.Color = Sequence.new(accent, Color3.fromRGB(220, 235, 255))
 
     local subtitle = Instance.new("TextLabel")
-    subtitle.Size = UDim2.new(1, 0, 0, 16)
-    subtitle.Position = UDim2.fromOffset(0, 62)
+    subtitle.Size = UDim2.new(1, 0, 0, 20)
+    subtitle.Position = UDim2.new(0, 0, 0, 52)
     subtitle.BackgroundTransparency = 1
     subtitle.Text = "One key, all scripts"
     subtitle.Font = Enum.Font.Gotham
-    subtitle.TextSize = 12
-    subtitle.TextColor3 = Color3.fromRGB(180, 185, 200)
+    subtitle.TextSize = 13
+    subtitle.TextColor3 = Color3.fromRGB(160, 160, 180)
     subtitle.Parent = card
-
-    local status = Instance.new("TextLabel")
-    status.Size = UDim2.new(1, -32, 0, 40)
-    status.Position = UDim2.fromOffset(16, 78)
-    status.BackgroundTransparency = 1
-    status.Text = ""
-    status.Font = Enum.Font.Gotham
-    status.TextSize = 12
-    status.TextColor3 = accent2
-    status.TextWrapped = true
-    status.Parent = card
 
     local keyBox = Instance.new("TextBox")
     keyBox.Name = "KeyBox"
     keyBox.Text = ""
-    keyBox.AnchorPoint = Vector2.new(0.5, 0.5)
-    keyBox.Position = UDim2.fromOffset(190, 155)
-    keyBox.Size = UDim2.new(0, 332, 0, 42)
-    keyBox.BackgroundColor3 = Color3.fromRGB(35, 38, 55)
+    keyBox.Position = UDim2.new(0.5, -155, 0, 88)
+    keyBox.Size = UDim2.new(0, 310, 0, 40)
+    keyBox.BackgroundColor3 = Color3.fromRGB(45, 45, 65)
     keyBox.BorderSizePixel = 0
     keyBox.Font = Enum.Font.GothamSemibold
-    keyBox.TextSize = 16
-    keyBox.TextColor3 = Color3.fromRGB(240, 242, 250)
+    keyBox.TextSize = 15
+    keyBox.TextColor3 = Color3.new(1, 1, 1)
     keyBox.PlaceholderText = "Paste your key here"
-    keyBox.PlaceholderColor3 = Color3.fromRGB(110, 114, 130)
+    keyBox.PlaceholderColor3 = Color3.fromRGB(120, 120, 140)
     keyBox.ClearTextOnFocus = false
     keyBox.Parent = card
-    Instance.new("UICorner", keyBox).CornerRadius = UDim.new(0, 10)
-    local keyBoxStroke = Instance.new("UIStroke", keyBox)
+
+    local keyBoxCorner = Instance.new("UICorner")
+    keyBoxCorner.CornerRadius = UDim.new(0, 8)
+    keyBoxCorner.Parent = keyBox
+
+    local keyBoxStroke = Instance.new("UIStroke")
     keyBoxStroke.Color = accent
-    keyBoxStroke.Transparency = 0.5
     keyBoxStroke.Thickness = 1
+    keyBoxStroke.Parent = keyBox
 
-    local function makeButton(text, posX, color)
-        local btn = Instance.new("TextButton")
-        btn.AnchorPoint = Vector2.new(0.5, 0.5)
-        btn.Position = UDim2.fromOffset(posX, 225)
-        btn.Size = UDim2.new(0, 150, 0, 42)
-        btn.BackgroundColor3 = color
-        btn.BorderSizePixel = 0
-        btn.Font = Enum.Font.GothamBold
-        btn.Text = text
-        btn.TextSize = 14
-        btn.TextColor3 = Color3.fromRGB(255, 255, 255)
-        btn.Parent = card
-        Instance.new("UICorner", btn).CornerRadius = UDim.new(0, 10)
-        return btn
-    end
+    local status = Instance.new("TextLabel")
+    status.Size = UDim2.new(1, -40, 0, 20)
+    status.Position = UDim2.new(0, 20, 0, 134)
+    status.BackgroundTransparency = 1
+    status.Text = ""
+    status.Font = Enum.Font.Gotham
+    status.TextSize = 12
+    status.TextColor3 = Color3.fromRGB(160, 160, 180)
+    status.TextWrapped = true
+    status.Parent = card
 
-    local getBtn = makeButton("Get Key", 100, accent)
-    getBtn.Name = "GetKeyBtn"
-    local verifyBtn = makeButton("Verify", 280, Color3.fromRGB(70, 80, 120))
-    verifyBtn.Name = "VerifyBtn"
+    local getBtn = Instance.new("TextButton")
+    getBtn.Position = UDim2.new(0.5, -162, 0, 170)
+    getBtn.Size = UDim2.new(0, 150, 0, 40)
+    getBtn.BackgroundColor3 = accent
+    getBtn.BorderSizePixel = 0
+    getBtn.Font = Enum.Font.GothamBold
+    getBtn.Text = "Get Key"
+    getBtn.TextSize = 14
+    getBtn.TextColor3 = Color3.new(1, 1, 1)
+    getBtn.Parent = card
+
+    local getBtnCorner = Instance.new("UICorner")
+    getBtnCorner.CornerRadius = UDim.new(0, 8)
+    getBtnCorner.Parent = getBtn
+
+    local verifyBtn = Instance.new("TextButton")
+    verifyBtn.Position = UDim2.new(0.5, 12, 0, 170)
+    verifyBtn.Size = UDim2.new(0, 150, 0, 40)
+    verifyBtn.BackgroundColor3 = Color3.fromRGB(80, 80, 110)
+    verifyBtn.BorderSizePixel = 0
+    verifyBtn.Font = Enum.Font.GothamBold
+    verifyBtn.Text = "Verify"
+    verifyBtn.TextSize = 14
+    verifyBtn.TextColor3 = Color3.new(1, 1, 1)
+    verifyBtn.Parent = card
+
+    local verifyBtnCorner = Instance.new("UICorner")
+    verifyBtnCorner.CornerRadius = UDim.new(0, 8)
+    verifyBtnCorner.Parent = verifyBtn
 
     local hint = Instance.new("TextLabel")
-    hint.Size = UDim2.new(1, -32, 0, 30)
-    hint.Position = UDim2.fromOffset(16, 275)
+    hint.Size = UDim2.new(1, -40, 0, 30)
+    hint.Position = UDim2.new(0, 20, 0, 222)
     hint.BackgroundTransparency = 1
     hint.Text = "Open the link, complete the ad, then paste your key."
     hint.Font = Enum.Font.Gotham
     hint.TextSize = 11
-    hint.TextColor3 = Color3.fromRGB(120, 124, 140)
+    hint.TextColor3 = Color3.fromRGB(110, 110, 130)
     hint.TextWrapped = true
     hint.Parent = card
 
     local function setStatus(msg, color)
         status.Text = msg
-        status.TextColor3 = color or accent2
+        if color then
+            status.TextColor3 = color
+        end
     end
 
     local validating = false
@@ -229,22 +243,22 @@ local function showKeyGate(onSuccess)
         if validating then return end
         local key = keyBox.Text
         if not key or #key < 4 then
-            setStatus("Paste your key first", Color3.fromRGB(255, 100, 100))
+            setStatus("Paste your key first", Color3.fromRGB(255, 80, 80))
             return
         end
         validating = true
         verifyBtn.Text = "Verifying..."
-        setStatus("Checking key...", accent2)
+        setStatus("Checking key...", Color3.fromRGB(160, 160, 180))
         local ok, err = keyValidate(key)
         if ok then
             keyWriteStore(key)
-            setStatus("Key valid! Loading...", Color3.fromRGB(100, 255, 120))
+            setStatus("Key valid! Loading...", Color3.fromRGB(80, 255, 120))
             task.wait(0.5)
             sc:Destroy()
             _G._hubKeyValidated = true
             onSuccess()
         else
-            setStatus(err, Color3.fromRGB(255, 100, 100))
+            setStatus(err, Color3.fromRGB(255, 80, 80))
         end
         validating = false
         verifyBtn.Text = "Verify"
@@ -255,12 +269,12 @@ local function showKeyGate(onSuccess)
         if link then
             if setclipboard then
                 setclipboard(link)
-                setStatus("Link copied! Open in browser.", accent2)
+                setStatus("Link copied! Open in browser.", Color3.fromRGB(80, 200, 255))
             else
-                setStatus("Open: " .. link, accent2)
+                setStatus("Open: " .. link, Color3.fromRGB(80, 200, 255))
             end
         else
-            setStatus("Could not get key link", Color3.fromRGB(255, 100, 100))
+            setStatus("Could not get key link", Color3.fromRGB(255, 80, 80))
         end
     end)
 end
