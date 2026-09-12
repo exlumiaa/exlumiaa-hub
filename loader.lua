@@ -152,7 +152,7 @@ local function showKeyGate(onSuccess)
     subtitle.Text = "One key, all scripts"
     subtitle.Font = Enum.Font.Gotham
     subtitle.TextSize = 12
-    subtitle.TextColor3 = Color3.fromRGB(150, 155, 172)
+    subtitle.TextColor3 = Color3.fromRGB(180, 185, 200)
     subtitle.Parent = card
 
     local status = Instance.new("TextLabel")
@@ -172,16 +172,20 @@ local function showKeyGate(onSuccess)
     keyBox.AnchorPoint = Vector2.new(0.5, 0.5)
     keyBox.Position = UDim2.fromOffset(190, 155)
     keyBox.Size = UDim2.new(0, 332, 0, 42)
-    keyBox.BackgroundColor3 = Color3.fromRGB(27, 29, 40)
+    keyBox.BackgroundColor3 = Color3.fromRGB(35, 38, 55)
     keyBox.BorderSizePixel = 0
     keyBox.Font = Enum.Font.GothamSemibold
     keyBox.TextSize = 16
     keyBox.TextColor3 = Color3.fromRGB(240, 242, 250)
-    keyBox.PlaceholderText = ""
+    keyBox.PlaceholderText = "Paste your key here"
     keyBox.PlaceholderColor3 = Color3.fromRGB(110, 114, 130)
     keyBox.ClearTextOnFocus = false
     keyBox.Parent = card
     Instance.new("UICorner", keyBox).CornerRadius = UDim.new(0, 10)
+    local keyBoxStroke = Instance.new("UIStroke", keyBox)
+    keyBoxStroke.Color = accent
+    keyBoxStroke.Transparency = 0.5
+    keyBoxStroke.Thickness = 1
 
     local function makeButton(text, posX, color)
         local btn = Instance.new("TextButton")
@@ -201,7 +205,7 @@ local function showKeyGate(onSuccess)
 
     local getBtn = makeButton("Get Key", 100, accent)
     getBtn.Name = "GetKeyBtn"
-    local verifyBtn = makeButton("Verify", 280, Color3.fromRGB(52, 58, 82))
+    local verifyBtn = makeButton("Verify", 280, Color3.fromRGB(70, 80, 120))
     verifyBtn.Name = "VerifyBtn"
 
     local hint = Instance.new("TextLabel")
