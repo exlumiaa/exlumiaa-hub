@@ -909,7 +909,7 @@ if Library then
         ToggleKeybind = Config.guiKey,
     })
 
-    local HomeTab = Window:AddTab("Home")
+    local HomeTab = Window:AddTab("Home", "home")
 
     local PlayerSection = HomeTab:AddLeftGroupbox("Player")
     healthLabel = PlayerSection:AddLabel("Health: -")
@@ -923,7 +923,7 @@ if Library then
     ServerSection:AddLabel("Players: --")
     ServerSection:AddLabel("by exlumiaa1")
 
-    local MainTab = Window:AddTab("Main")
+    local MainTab = Window:AddTab("Main", "zap")
 
     local CollectSection = MainTab:AddLeftGroupbox("Auto Collect")
     CollectSection:AddToggle("AutoCollect", {
@@ -1094,7 +1094,7 @@ if Library then
     })
     tripleLabel = AttackSection:AddLabel("Status: -")
 
-    local SettingsTab = Window:AddTab("Settings")
+    local SettingsTab = Window:AddTab("Settings", "settings")
     local SaveSection = SettingsTab:AddLeftGroupbox("Save / Load")
     SaveSection:AddButton({
         Text = "Save Settings",

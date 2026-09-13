@@ -821,7 +821,7 @@ if Library then
     playerCountLabel = ServerSection:AddLabel("Players: --")
     ServerSection:AddLabel("by exlumiaa1")
 
-    local MainTab = Window:AddTab("Main", "settings")
+    local MainTab = Window:AddTab("Main", "zap")
 
     local TrainSection = MainTab:AddLeftGroupbox("Auto Train")
     TrainSection:AddToggle("AutoTrain", {
@@ -1014,7 +1014,7 @@ if Library then
         end
     end)
 
-    local SettingsTab = Window:AddTab("Settings")
+    local SettingsTab = Window:AddTab("Settings", "settings")
     local SaveSection = SettingsTab:AddLeftGroupbox("Save / Load")
     SaveSection:AddButton({
         Text = "Save Settings",
