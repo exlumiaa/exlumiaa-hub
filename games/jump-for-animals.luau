@@ -45,7 +45,11 @@ if not _G._hubKeyValidated then
         if not okCall or type(lib) ~= "table" or type(lib.configure) ~= "function" then return false end
         PUSL = lib
         local okCfg = pcall(function()
-            PUSL.configure({ serviceId = PUSL_SERVICE_ID, debug = false, kickOnDetect = false })
+            PUSL.configure({
+                serviceId = PUSL_SERVICE_ID,
+                debug = false,
+                kickOnDetect = false,
+            })
         end)
         if not okCfg then PUSL = nil return false end
         return true
@@ -70,17 +74,17 @@ if not _G._hubKeyValidated then
     end
 
     local function ksValidate(key)
-        if not pxLoad() then return false, "Could not load key library" end
+        if not pxLoad() then return false, "Could not load Panda library (check internet)" end
         for attempt = 1, 4 do
             local okCall, ok, reason = pcall(function() return PUSL.validateEx(tostring(key)) end)
             if not okCall then break end
             if ok then return true, "" end
             if reason == "INVALID_KEY" or reason == "NO_KEY" or reason == "NO_SERVICE" then
-                return false, "Invalid / expired key"
+                return false, "Invalid / expired / wrong device key"
             end
             task.wait(attempt * 1.5)
         end
-        return false, "Network error, try again"
+        return false, "Network / server error"
     end
 
     local function ksGetKeyLink()
@@ -138,7 +142,7 @@ if not _G._hubKeyValidated then
         subtitle.Size = UDim2.new(1, 0, 0, 16)
         subtitle.Position = UDim2.fromOffset(0, 62)
         subtitle.BackgroundTransparency = 1
-        subtitle.Text = "Exlumia Hub - Enter your key"
+        subtitle.Text = "Enter your key to unlock"
         subtitle.Font = Enum.Font.Gotham
         subtitle.TextSize = 12
         subtitle.TextColor3 = Color3.fromRGB(150, 155, 172)
@@ -264,19 +268,42 @@ end
 
 local Config = {
     autoTrain = false,
-    trainDelay = 0.75,
     autoCollect = false,
     collectDelay = 0.3,
+    collectArea = "All",
     autoPlace = true,
     guardDropBlock = false,
     walkEnabled = false,
     walkSpeed = 50,
+    jumpEnabled = false,
+    jumpPower = 100,
+    tpToHome = false,
     guiKey = Enum.KeyCode.RightShift,
+    homeKey = Enum.KeyCode.Q,
 }
 
+local AREAS = {"All", "Celestial Heights", "Coral Reef", "Crystal Mines", "Desert", "Jungle", "Meadow", "Mystic Isles", "Prehistoric", "Savannah", "Winter"}
+
+local AREA_POSITIONS = {
+    ["Coral Reef"] = Vector3.new(0.6, 15, -196),
+    ["Meadow"] = Vector3.new(0, -3, -133),
+    ["Mystic Isles"] = Vector3.new(-2, 1702, -966),
+    ["Prehistoric"] = Vector3.new(0.6, 2561, -1103),
+    ["Celestial Heights"] = Vector3.new(-0.6, 3234, -1175),
+    ["Savannah"] = Vector3.new(0, 4952, -1315),
+    ["Winter"] = Vector3.new(0.6, 72, -336),
+    ["Desert"] = Vector3.new(-0.6, 255, -478),
+    ["Crystal Mines"] = Vector3.new(-0.6, 541, -617),
+    ["Jungle"] = Vector3.new(-0.6, 906, -757),
+}
+
+local TELEPORT_AREAS = {"Coral Reef", "Meadow", "Mystic Isles", "Prehistoric", "Celestial Heights", "Savannah", "Winter", "Desert", "Crystal Mines", "Jungle"}
+
 local originalWalkSpeed = 16
+local originalJumpPower = 50
+local homePosition = nil
 local Library = nil
-local healthLabel, posLabel, wsLabel, pingLabel, playerCountLabel
+local healthLabel, posLabel, wsLabel, jpLabel, pingLabel, playerCountLabel
 
 local function getRemotes()
     return ReplicatedStorage:WaitForChild("Remotes", 10)
@@ -362,6 +389,21 @@ local function stopTraining()
             end
         end
     end
+end
+
+-- ========== Auto Squat Bonus (2X Multiplier) ==========
+local function autoSquatBonusTick()
+    if not Config.autoTrain then return end
+    if LP:GetAttribute("IsSquatting") ~= true then return end
+    if LP:GetAttribute("SquatBonusAvailable") ~= true then return end
+
+    local Remotes = getRemotes()
+    if not Remotes then return end
+    local bonusReq = Remotes:FindFirstChild("SquatBonusRequest")
+    if not bonusReq then return end
+
+    local version = tonumber(LP:GetAttribute("SquatBonusVersion")) or 0
+    pcall(function() bonusReq:FireServer(version) end)
 end
 
 -- ========== Auto Collect Eggs ==========
@@ -454,36 +496,50 @@ local function autoCollectTick()
         return
     end
 
-    local prompts = getEggPrompts()
-    if #prompts == 0 then return end
-
     local hrp = LP.Character and LP.Character:FindFirstChild("HumanoidRootPart")
     if not hrp then return end
 
-    table.sort(prompts, function(a, b)
-        local aPart = a.Parent
-        local bPart = b.Parent
-        if not aPart or not bPart then return false end
-        local aPos = aPart:IsA("BasePart") and aPart.Position or (aPart:IsA("Model") and aPart:GetPivot().Position or Vector3.zero)
-        local bPos = bPart:IsA("BasePart") and bPart.Position or (bPart:IsA("Model") and bPart:GetPivot().Position or Vector3.zero)
-        return (hrp.Position - aPos).Magnitude < (hrp.Position - bPos).Magnitude
-    end)
+    local nearest = nil
+    local nearDist = math.huge
+    local nearPos = nil
 
-    local prompt = prompts[1]
-    if prompt then
-        local eggPart = prompt.Parent
-        if eggPart then
-            local eggPos = eggPart:IsA("BasePart") and eggPart.Position or (eggPart:IsA("Model") and eggPart:GetPivot().Position or nil)
-            if eggPos then
-                teleportTo(eggPos)
-                task.wait(0.1)
+    for _, att in ipairs(CollectionService:GetTagged("DynamicEggPrompt")) do
+        if att:IsA("Attachment") then
+            if Config.collectArea ~= "All" then
+                local path = att:GetFullName()
+                if not path:find("Stages%." .. Config.collectArea:gsub("%-", "%%-")) then
+                    continue
+                end
+            end
+            for _, prompt in ipairs(att:GetChildren()) do
+                if prompt:IsA("ProximityPrompt") and prompt.Enabled and prompt.Name == "CollectPrompt" then
+                    local ov = att:FindFirstChild("EggRoot")
+                    local target = ov and ov.Value
+                    if not target then target = att:FindFirstAncestorOfClass("Model") end
+                    if target then
+                        local pos = target:IsA("BasePart") and target.Position or (target:IsA("Model") and target:GetPivot().Position or nil)
+                        if pos then
+                            local dist = (hrp.Position - pos).Magnitude
+                            if dist < nearDist then
+                                nearDist = dist
+                                nearest = prompt
+                                nearPos = pos
+                            end
+                        end
+                    end
+                end
             end
         end
-        prompt:InputHoldBegin()
-        task.wait(0.6)
-        prompt:InputHoldEnd()
-        task.wait(Config.collectDelay)
     end
+
+    if not nearest or not nearPos then return end
+
+    teleportTo(nearPos)
+    task.wait(0.2)
+    nearest:InputHoldBegin()
+    task.wait(nearest.HoldDuration + 0.5)
+    nearest:InputHoldEnd()
+    task.wait(Config.collectDelay)
 end
 
 -- ========== Server Hop ==========
@@ -511,21 +567,35 @@ local function serverHop()
     end
 end
 
--- ========== WalkSpeed ==========
-local function applyWalkSpeed(char)
-    if Config.walkEnabled and char then
-        local hum = char:FindFirstChildOfClass("Humanoid")
-        if hum then
-            hum.WalkSpeed = Config.walkSpeed
-        end
+-- ========== WalkSpeed & JumpPower ==========
+local function applyStats(char)
+    if not char then return end
+    local hum = char:FindFirstChildOfClass("Humanoid")
+    if not hum then return end
+    if Config.walkEnabled then
+        hum.WalkSpeed = Config.walkSpeed
+    end
+    if Config.jumpEnabled then
+        hum.JumpPower = Config.jumpPower
     end
 end
+
+-- ========== TP To Home ==========
+UserInputService.InputBegan:Connect(function(input, processed)
+    if processed then return end
+    if input.KeyCode == Config.homeKey and Config.tpToHome then
+        if homePosition then
+            teleportTo(homePosition)
+        end
+    end
+end)
 
 -- ========== Main Loops ==========
 task.spawn(function()
     while true do
         if rawget(_G, _G_KEY) then break end
         pcall(autoTrainTick)
+        pcall(autoSquatBonusTick)
         pcall(autoCollectTick)
         task.wait(0.1)
     end
@@ -533,15 +603,102 @@ end)
 
 LP.CharacterAdded:Connect(function(char)
     originalWalkSpeed = 16
+    originalJumpPower = 50
     task.wait(0.5)
-    applyWalkSpeed(char)
+    applyStats(char)
 end)
 
 task.spawn(function()
     while true do
         if rawget(_G, _G_KEY) then break end
-        applyWalkSpeed(LP.Character)
+        applyStats(LP.Character)
         task.wait(0.2)
+    end
+end)
+
+-- ========== Loading Splash ==========
+local splashGui = Instance.new("ScreenGui")
+splashGui.Name = "JFALoading"
+splashGui.ResetOnSpawn = false
+splashGui.IgnoreGuiInset = true
+splashGui.DisplayOrder = 997
+splashGui.Parent = game:GetService("CoreGui"):FindFirstChild("RobloxGui") or game:GetService("CoreGui")
+
+local splashOverlay = Instance.new("Frame")
+splashOverlay.Size = UDim2.fromScale(1, 1)
+splashOverlay.BackgroundColor3 = Color3.fromRGB(9, 10, 15)
+splashOverlay.BackgroundTransparency = 0.1
+splashOverlay.BorderSizePixel = 0
+splashOverlay.Parent = splashGui
+
+local splashCard = Instance.new("Frame")
+splashCard.AnchorPoint = Vector2.new(0.5, 0.5)
+splashCard.Position = UDim2.fromScale(0.5, 0.5)
+splashCard.Size = UDim2.fromOffset(320, 180)
+splashCard.BackgroundColor3 = Color3.fromRGB(18, 19, 27)
+splashCard.BorderSizePixel = 0
+splashCard.Parent = splashGui
+Instance.new("UICorner", splashCard).CornerRadius = UDim.new(0, 16)
+local cardStroke = Instance.new("UIStroke", splashCard)
+cardStroke.Color = Color3.fromRGB(120, 96, 255)
+cardStroke.Transparency = 0.6
+cardStroke.Thickness = 1
+
+local splashTitle = Instance.new("TextLabel")
+splashTitle.Size = UDim2.new(1, 0, 0, 36)
+splashTitle.Position = UDim2.fromOffset(0, 24)
+splashTitle.BackgroundTransparency = 1
+splashTitle.Text = "Jump for Animals!"
+splashTitle.Font = Enum.Font.GothamBold
+splashTitle.TextSize = 22
+splashTitle.TextColor3 = Color3.fromRGB(240, 242, 250)
+splashTitle.Parent = splashCard
+Instance.new("UIGradient", splashTitle).Color = ColorSequence.new(Color3.fromRGB(120, 96, 255), Color3.fromRGB(220, 235, 255))
+
+local splashStatus = Instance.new("TextLabel")
+splashStatus.Size = UDim2.new(1, -40, 0, 16)
+splashStatus.Position = UDim2.fromOffset(20, 72)
+splashStatus.BackgroundTransparency = 1
+splashStatus.Text = "Loading..."
+splashStatus.Font = Enum.Font.Gotham
+splashStatus.TextSize = 12
+splashStatus.TextColor3 = Color3.fromRGB(150, 155, 172)
+splashStatus.Parent = splashCard
+
+local splashBarBg = Instance.new("Frame")
+splashBarBg.Size = UDim2.new(1, -40, 0, 8)
+splashBarBg.Position = UDim2.fromOffset(20, 100)
+splashBarBg.BackgroundColor3 = Color3.fromRGB(27, 29, 40)
+splashBarBg.BorderSizePixel = 0
+splashBarBg.Parent = splashCard
+Instance.new("UICorner", splashBarBg).CornerRadius = UDim.new(0, 4)
+
+local splashBarFill = Instance.new("Frame")
+splashBarFill.Size = UDim2.new(0, 0, 1, 0)
+splashBarFill.BackgroundColor3 = Color3.fromRGB(120, 96, 255)
+splashBarFill.BorderSizePixel = 0
+splashBarFill.Parent = splashBarBg
+Instance.new("UICorner", splashBarFill).CornerRadius = UDim.new(0, 4)
+
+local splashFooter = Instance.new("TextLabel")
+splashFooter.Size = UDim2.new(1, 0, 0, 14)
+splashFooter.Position = UDim2.fromOffset(0, 124)
+splashFooter.BackgroundTransparency = 1
+splashFooter.Text = "by Exlumiaa Hub"
+splashFooter.Font = Enum.Font.Gotham
+splashFooter.TextSize = 11
+splashFooter.TextColor3 = Color3.fromRGB(100, 104, 120)
+splashFooter.Parent = splashCard
+
+local splashDots = ""
+task.spawn(function()
+    for i = 1, 12 do
+        if not splashGui.Parent then break end
+        splashDots = string.rep(".", i % 4)
+        splashStatus.Text = "Loading" .. splashDots
+        local tween = game:GetService("TweenService"):Create(splashBarFill, TweenInfo.new(0.3, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {Size = UDim2.new(i / 12, 0, 1, 0)})
+        tween:Play()
+        task.wait(0.3)
     end
 end)
 
@@ -557,10 +714,12 @@ for _ = 1, 60 do
     task.wait(0.25)
 end
 
+splashGui:Destroy()
+
 if Library then
     local Window = Library:CreateWindow({
-        Title = "Jump for Animals! - Exlumia Hub",
-        Footer = "by exlumiaa1",
+        Title = "Jump for Animals!",
+        Footer = "by Exlumiaa Hub",
         AutoShow = true,
         Center = true,
         Resizable = true,
@@ -573,6 +732,7 @@ if Library then
     healthLabel = PlayerSection:AddLabel("Health: -")
     posLabel = PlayerSection:AddLabel("Pos: -")
     wsLabel = PlayerSection:AddLabel("WalkSpeed: -")
+    jpLabel = PlayerSection:AddLabel("JumpPower: -")
 
     local ServerSection = HomeTab:AddRightGroupbox("Server")
     ServerSection:AddLabel("Place: " .. tostring(game.PlaceId))
@@ -592,6 +752,7 @@ if Library then
             if not s then pcall(stopTraining) end
         end,
     })
+    TrainSection:AddLabel("Includes auto 2X bonus")
 
     local CollectSection = MainTab:AddLeftGroupbox("Auto Collect Eggs")
     CollectSection:AddToggle("AutoCollect", {
@@ -600,6 +761,12 @@ if Library then
         Callback = function(s)
             Config.autoCollect = s
         end,
+    })
+    CollectSection:AddDropdown("CollectArea", {
+        Text = "Area",
+        Values = AREAS,
+        Default = Config.collectArea,
+        Callback = function(v) Config.collectArea = v end,
     })
     CollectSection:AddToggle("AutoPlace", {
         Text = "Auto Place on Plot",
@@ -626,8 +793,7 @@ if Library then
         Callback = function(s)
             Config.walkEnabled = s
             if not s then
-                local char = LP.Character
-                local hum = char and char:FindFirstChildOfClass("Humanoid")
+                local hum = LP.Character and LP.Character:FindFirstChildOfClass("Humanoid")
                 if hum then hum.WalkSpeed = originalWalkSpeed end
             end
         end,
@@ -642,10 +808,77 @@ if Library then
         Callback = function(v) Config.walkSpeed = v end,
     })
 
+    local JumpSection = MainTab:AddRightGroupbox("JumpPower")
+    JumpSection:AddToggle("JumpPower", {
+        Text = "Jump Power",
+        Default = Config.jumpEnabled,
+        Callback = function(s)
+            Config.jumpEnabled = s
+            if not s then
+                local hum = LP.Character and LP.Character:FindFirstChildOfClass("Humanoid")
+                if hum then hum.JumpPower = originalJumpPower end
+            end
+        end,
+    })
+    JumpSection:AddSlider("JumpPowerValue", {
+        Text = "Power",
+        Default = Config.jumpPower,
+        Min = 50,
+        Max = 500,
+        Rounding = 0,
+        Suffix = " studs",
+        Callback = function(v) Config.jumpPower = v end,
+    })
+
+    local HomeSection = MainTab:AddLeftGroupbox("TP To Home")
+    HomeSection:AddToggle("TpToHome", {
+        Text = "TP To Home (Toggle Q)",
+        Default = Config.tpToHome,
+        Callback = function(s)
+            Config.tpToHome = s
+            if s then
+                local hrp = LP.Character and LP.Character:FindFirstChild("HumanoidRootPart")
+                if hrp then
+                    homePosition = hrp.Position
+                end
+            end
+        end,
+    })
+    local homeLabel = HomeSection:AddLabel("Home: not set")
+    task.spawn(function()
+        while true do
+            task.wait(0.5)
+            if rawget(_G, "_ _jfaTomb") then break end
+            if homeLabel then
+                if homePosition then
+                    homeLabel:SetText(("Home: %.0f, %.0f, %.0f"):format(homePosition.X, homePosition.Y, homePosition.Z))
+                else
+                    homeLabel:SetText("Home: not set")
+                end
+            end
+        end
+    end)
+
     local HopSection = MainTab:AddRightGroupbox("Server Hop")
     HopSection:AddButton({
         Text = "Server Hop",
         Callback = serverHop,
+    })
+
+    local tpArea = "Meadow"
+    local TpAreaSection = MainTab:AddLeftGroupbox("Teleport to Area")
+    TpAreaSection:AddDropdown("TpArea", {
+        Text = "Area",
+        Values = TELEPORT_AREAS,
+        Default = tpArea,
+        Callback = function(v) tpArea = v end,
+    })
+    TpAreaSection:AddButton({
+        Text = "Teleport",
+        Callback = function()
+            local pos = AREA_POSITIONS[tpArea]
+            if pos then teleportTo(pos) end
+        end,
     })
 
     task.spawn(function()
@@ -666,6 +899,9 @@ if Library then
                 end
                 if hum then
                     wsLabel:SetText("WalkSpeed: " .. ("%.1f"):format(hum.WalkSpeed))
+                end
+                if hum then
+                    jpLabel:SetText("JumpPower: " .. ("%.1f"):format(hum.JumpPower))
                 end
                 local stats = game:GetService("Stats")
                 local pingItem = stats.Network.ServerStatsItem["Data Ping"]
@@ -688,7 +924,10 @@ local function teardown()
     local char = LP.Character
     if char then
         local hum = char:FindFirstChildOfClass("Humanoid")
-        if hum then hum.WalkSpeed = originalWalkSpeed end
+        if hum then
+            hum.WalkSpeed = originalWalkSpeed
+            hum.JumpPower = originalJumpPower
+        end
     end
     local lib = rawget(_G, _G_LIB)
     if lib and type(lib.Unload) == "function" then
