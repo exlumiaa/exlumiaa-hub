@@ -772,8 +772,8 @@ splashFooter.Parent = splashCard
 local splashDots = ""
 local splashDone = false
 task.spawn(function()
-    local totalSteps = 20
-    local stepTime = 0.2
+    local totalSteps = 10
+    local stepTime = 0.15
     for i = 1, totalSteps do
         if not splashGui.Parent then break end
         local dots = string.rep(".", (i - 1) % 4 + 1)
