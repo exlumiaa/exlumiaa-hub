@@ -772,14 +772,18 @@ splashFooter.Parent = splashCard
 local splashDots = ""
 local splashDone = false
 task.spawn(function()
-    for i = 1, 12 do
+    local totalSteps = 20
+    local stepTime = 0.2
+    for i = 1, totalSteps do
         if not splashGui.Parent then break end
-        splashDots = string.rep(".", i % 4)
-        splashStatus.Text = "Loading" .. splashDots
-        local tween = game:GetService("TweenService"):Create(splashBarFill, TweenInfo.new(0.3, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {Size = UDim2.new(i / 12, 0, 1, 0)})
+        local dots = string.rep(".", (i - 1) % 4 + 1)
+        splashStatus.Text = "Loading" .. dots
+        local pct = i / totalSteps
+        local tween = game:GetService("TweenService"):Create(splashBarFill, TweenInfo.new(stepTime, Enum.EasingStyle.Cubic, Enum.EasingDirection.Out), {Size = UDim2.new(pct, 0, 1, 0)})
         tween:Play()
-        task.wait(0.3)
+        task.wait(stepTime)
     end
+    splashStatus.Text = "Ready!"
     splashDone = true
 end)
 
@@ -799,6 +803,18 @@ while not splashDone and splashGui.Parent do
     task.wait(0.1)
 end
 
+task.wait(0.3)
+local ts = game:GetService("TweenService")
+local tw = TweenInfo.new(0.35, Enum.EasingStyle.Quad, Enum.EasingDirection.In)
+ts:Create(splashOverlay, tw, {BackgroundTransparency = 1}):Play()
+ts:Create(splashCard, tw, {BackgroundTransparency = 1}):Play()
+ts:Create(splashTitle, tw, {TextTransparency = 1}):Play()
+ts:Create(splashStatus, tw, {TextTransparency = 1}):Play()
+ts:Create(splashFooter, tw, {TextTransparency = 1}):Play()
+ts:Create(splashBarFill, tw, {BackgroundTransparency = 1}):Play()
+ts:Create(splashBarBg, tw, {BackgroundTransparency = 1}):Play()
+ts:Create(cardStroke, tw, {Transparency = 1}):Play()
+task.wait(0.4)
 splashGui:Destroy()
 
 if Library then
