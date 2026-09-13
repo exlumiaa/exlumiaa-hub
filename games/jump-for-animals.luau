@@ -272,6 +272,7 @@ local Config = {
     collectDelay = 0.3,
     collectArea = "All",
     autoPlace = true,
+    autoTpOpEgg = false,
     guardDropBlock = false,
     walkEnabled = false,
     walkSpeed = 50,
@@ -304,6 +305,49 @@ local originalJumpPower = 50
 local homePosition = nil
 local Library = nil
 local healthLabel, posLabel, wsLabel, jpLabel, pingLabel, playerCountLabel
+
+local SETTINGS_PATH = "ExlumiaHub/jfa_settings.json"
+
+local function saveSettings()
+    local data = {
+        autoTrain = Config.autoTrain,
+        autoCollect = Config.autoCollect,
+        collectArea = Config.collectArea,
+        autoPlace = Config.autoPlace,
+        autoTpOpEgg = Config.autoTpOpEgg,
+        guardDropBlock = Config.guardDropBlock,
+        walkEnabled = Config.walkEnabled,
+        walkSpeed = Config.walkSpeed,
+        jumpEnabled = Config.jumpEnabled,
+        jumpPower = Config.jumpPower,
+        tpToHome = Config.tpToHome,
+    }
+    if homePosition then
+        data.homeX = homePosition.X
+        data.homeY = homePosition.Y
+        data.homeZ = homePosition.Z
+    end
+    if type(writefile) == "function" then
+        pcall(writefile, SETTINGS_PATH, game:GetService("HttpService"):JSONEncode(data))
+    end
+end
+
+local function loadSettings()
+    if type(isfile) ~= "function" or not isfile(SETTINGS_PATH) then return false end
+    local ok, raw = pcall(readfile, SETTINGS_PATH)
+    if not ok or type(raw) ~= "string" then return false end
+    local ok2, data = pcall(function() return game:GetService("HttpService"):JSONDecode(raw) end)
+    if not ok2 or type(data) ~= "table" then return false end
+    for k, v in pairs(data) do
+        if Config[k] ~= nil then
+            Config[k] = v
+        end
+    end
+    if data.homeX and data.homeY and data.homeZ then
+        homePosition = Vector3.new(data.homeX, data.homeY, data.homeZ)
+    end
+    return true
+end
 
 local function getRemotes()
     return ReplicatedStorage:WaitForChild("Remotes", 10)
@@ -590,6 +634,40 @@ UserInputService.InputBegan:Connect(function(input, processed)
     end
 end)
 
+-- ========== OP Egg Tracker ==========
+local opEggLabel = nil
+local opEggTpSent = false
+
+local function getOpEggCountdown()
+    local Map = workspace:FindFirstChild("Map")
+    if not Map then return nil, false, false end
+    local enabled = Map:GetAttribute("SecretSpawnEnabled")
+    if enabled == false then return nil, false, false end
+    local queued = Map:GetAttribute("SecretSpawnQueued")
+    local endsAt = Map:GetAttribute("SecretSpawnEndsAt")
+    local now = workspace:GetServerTimeNow()
+    local remaining = endsAt and math.max(math.ceil(endsAt - now), 0) or 0
+    return remaining, queued == true, true
+end
+
+local function opEggTick()
+    if not Config.autoTpOpEgg then return end
+    local remaining, queued, enabled = getOpEggCountdown()
+    if not enabled then return end
+
+    if remaining == 0 and not queued then
+        if not opEggTpSent then
+            local pos = AREA_POSITIONS["Prehistoric"]
+            if pos then
+                teleportTo(pos)
+                opEggTpSent = true
+            end
+        end
+    else
+        opEggTpSent = false
+    end
+end
+
 -- ========== Main Loops ==========
 task.spawn(function()
     while true do
@@ -597,6 +675,7 @@ task.spawn(function()
         pcall(autoTrainTick)
         pcall(autoSquatBonusTick)
         pcall(autoCollectTick)
+        pcall(opEggTick)
         task.wait(0.1)
     end
 end)
@@ -717,6 +796,7 @@ end
 splashGui:Destroy()
 
 if Library then
+    loadSettings()
     local Window = Library:CreateWindow({
         Title = "Jump for Animals!",
         Footer = "by Exlumiaa Hub",
@@ -881,6 +961,14 @@ if Library then
         end,
     })
 
+    local OpEggSection = MainTab:AddRightGroupbox("OP Egg Tracker")
+    opEggLabel = OpEggSection:AddLabel("Divine Egg: loading...")
+    OpEggSection:AddToggle("AutoTpOpEgg", {
+        Text = "Auto TP When Spawned",
+        Default = Config.autoTpOpEgg,
+        Callback = function(s) Config.autoTpOpEgg = s; opEggTpSent = false end,
+    })
+
     task.spawn(function()
         local avgMs = 0
         while true do
@@ -909,8 +997,52 @@ if Library then
                 pingLabel:SetText("Ping: " .. ("%dms"):format(math.floor(avgMs + 0.5)))
                 playerCountLabel:SetText("Players: " .. #Players:GetPlayers())
             end
+            if opEggLabel then
+                local remaining, queued, enabled = getOpEggCountdown()
+                if not enabled then
+                    opEggLabel:SetText("Divine Egg: disabled")
+                elseif queued then
+                    opEggLabel:SetText("Divine Egg: NEXT RESTOCK!")
+                elseif remaining and remaining > 0 then
+                    local m = math.floor(remaining / 60)
+                    local s = remaining % 60
+                    opEggLabel:SetText(("Divine Egg: %dm %ds"):format(m, s))
+                else
+                    opEggLabel:SetText("Divine Egg: SPAWNED!")
+                end
+            end
         end
     end)
+
+    local SettingsTab = Window:AddTab("Settings")
+    local SaveSection = SettingsTab:AddLeftGroupbox("Save / Load")
+    SaveSection:AddButton({
+        Text = "Save Settings",
+        Callback = function()
+            saveSettings()
+            Library:Notify({Title = "Settings", Content = "Settings saved!", Duration = 2})
+        end,
+    })
+    SaveSection:AddButton({
+        Text = "Load Settings",
+        Callback = function()
+            local ok = loadSettings()
+            if ok then
+                Library:Notify({Title = "Settings", Content = "Settings loaded!", Duration = 2})
+            else
+                Library:Notify({Title = "Settings", Content = "No saved settings found.", Duration = 2})
+            end
+        end,
+    })
+    SaveSection:AddButton({
+        Text = "Reset to Default",
+        Callback = function()
+            if type(delfile) == "function" and type(isfile) == "function" and isfile(SETTINGS_PATH) then
+                pcall(delfile, SETTINGS_PATH)
+            end
+            Library:Notify({Title = "Settings", Content = "Saved settings deleted.", Duration = 2})
+        end,
+    })
 
     rawset(_G, _G_LIB, Library)
     rawset(_G, _G_GUI, Library.ScreenGui)

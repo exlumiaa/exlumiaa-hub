@@ -337,6 +337,41 @@ local Config = {
     tripleShot = false,
 }
 
+local PB_SETTINGS_PATH = "ExlumiaHub/pb_settings.json"
+
+local function saveSettings()
+    local data = {
+        autoCollect = Config.autoCollect,
+        useTeleport = Config.useTeleport,
+        snapCamera = Config.snapCamera,
+        collectWait = Config.collectWait,
+        walkEnabled = Config.walkEnabled,
+        walkSpeed = Config.walkSpeed,
+        cycleEnabled = Config.cycleEnabled,
+        cycleOn = Config.cycleOn,
+        cycleOff = Config.cycleOff,
+        aimlessAttack = Config.aimlessAttack,
+        tripleShot = Config.tripleShot,
+    }
+    if type(writefile) == "function" then
+        pcall(writefile, PB_SETTINGS_PATH, game:GetService("HttpService"):JSONEncode(data))
+    end
+end
+
+local function loadSettings()
+    if type(isfile) ~= "function" or not isfile(PB_SETTINGS_PATH) then return false end
+    local ok, raw = pcall(readfile, PB_SETTINGS_PATH)
+    if not ok or type(raw) ~= "string" then return false end
+    local ok2, data = pcall(function() return game:GetService("HttpService"):JSONDecode(raw) end)
+    if not ok2 or type(data) ~= "table" then return false end
+    for k, v in pairs(data) do
+        if Config[k] ~= nil then
+            Config[k] = v
+        end
+    end
+    return true
+end
+
 local autoAttackPatched = false
 local origConeTest = nil
 
@@ -863,6 +898,7 @@ while not loaderDone do
 end
 
 if Library then
+    loadSettings()
     local Window = Library:CreateWindow({
         Title = "Pop Bubbles Collector",
         Footer = "Pop Bubbles Collector",
@@ -1057,6 +1093,38 @@ if Library then
         end,
     })
     tripleLabel = AttackSection:AddLabel("Status: -")
+
+    local SettingsTab = Window:AddTab("Settings")
+    local SaveSection = SettingsTab:AddLeftGroupbox("Save / Load")
+    SaveSection:AddButton({
+        Text = "Save Settings",
+        Callback = function()
+            saveSettings()
+            if Library and Library.Notify then
+                Library:Notify({Title = "Settings", Content = "Settings saved!", Duration = 2})
+            end
+        end,
+    })
+    SaveSection:AddButton({
+        Text = "Load Settings",
+        Callback = function()
+            local ok = loadSettings()
+            if ok then
+                Library:Notify({Title = "Settings", Content = "Settings loaded!", Duration = 2})
+            else
+                Library:Notify({Title = "Settings", Content = "No saved settings found.", Duration = 2})
+            end
+        end,
+    })
+    SaveSection:AddButton({
+        Text = "Reset to Default",
+        Callback = function()
+            if type(delfile) == "function" and type(isfile) == "function" and isfile(PB_SETTINGS_PATH) then
+                pcall(delfile, PB_SETTINGS_PATH)
+            end
+            Library:Notify({Title = "Settings", Content = "Saved settings deleted.", Duration = 2})
+        end,
+    })
 
     rawset(_G, _G_LIB, Library)
     rawset(_G, _G_GUI, Library.ScreenGui)
