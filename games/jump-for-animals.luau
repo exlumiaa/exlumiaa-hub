@@ -770,6 +770,7 @@ splashFooter.TextColor3 = Color3.fromRGB(100, 104, 120)
 splashFooter.Parent = splashCard
 
 local splashDots = ""
+local splashDone = false
 task.spawn(function()
     for i = 1, 12 do
         if not splashGui.Parent then break end
@@ -779,6 +780,7 @@ task.spawn(function()
         tween:Play()
         task.wait(0.3)
     end
+    splashDone = true
 end)
 
 -- ========== Obsidian UI ==========
@@ -791,6 +793,10 @@ end)
 for _ = 1, 60 do
     if Library ~= nil then break end
     task.wait(0.25)
+end
+
+while not splashDone and splashGui.Parent do
+    task.wait(0.1)
 end
 
 splashGui:Destroy()
