@@ -15,6 +15,7 @@ local KEYSTORE_PATH = "ExlumiaHub/panda_key.txt"
 local GAMES = {
     [10503838245] = "games/pop-bubbles.luau",
     [10690360998] = "games/jump-for-animals.luau",
+    [903807016] = "games/erlc.luau",
 }
 
 -- ==================== PANDA AUTH ====================
