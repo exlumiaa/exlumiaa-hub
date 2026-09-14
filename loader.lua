@@ -12,11 +12,34 @@ local PUSL_LIB_URL = "https://secure.pandauth.com/pv4/lib"
 local KEYSTORE_PATH = "ExlumiaHub/panda_key.txt"
 
 -- ==================== GAME TABLE ====================
+-- GAMES is loaded from games.json at runtime so new games can be added
+-- without touching the loader. Hardcoded table is only a fallback.
 local GAMES = {
+    [903807016] = "games/erlc.luau",
     [10503838245] = "games/pop-bubbles.luau",
     [10690360998] = "games/jump-for-animals.luau",
-    [903807016] = "games/erlc.luau",
 }
+
+local HttpService = game:GetService("HttpService")
+
+do
+    local okGet, src = pcall(function()
+        return game:HttpGet(BASE_URL .. "games.json")
+    end)
+    if okGet and type(src) == "string" and #src > 0 then
+        local okDec, data = pcall(function()
+            return HttpService:JSONDecode(src)
+        end)
+        if okDec and type(data) == "table" then
+            for gameId, path in pairs(data) do
+                local id = tonumber(gameId)
+                if id and type(path) == "string" then
+                    GAMES[id] = path
+                end
+            end
+        end
+    end
+end
 
 -- ==================== PANDA AUTH ====================
 local PUSL = nil
