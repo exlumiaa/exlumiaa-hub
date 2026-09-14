@@ -13,12 +13,8 @@ local KEYSTORE_PATH = "ExlumiaHub/panda_key.txt"
 
 -- ==================== GAME TABLE ====================
 -- GAMES is loaded from games.json at runtime so new games can be added
--- without touching the loader. Hardcoded table is only a fallback.
-local GAMES = {
-    [903807016] = "games/erlc.luau",
-    [10503838245] = "games/pop-bubbles.luau",
-    [10690360998] = "games/jump-for-animals.luau",
-}
+-- without touching the loader.
+local GAMES = {}
 
 local HttpService = game:GetService("HttpService")
 
