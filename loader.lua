@@ -6,7 +6,7 @@ local Players = game:GetService("Players")
 local LP = Players.LocalPlayer
 
 -- ==================== CONFIG ====================
-local BASE_URL = "https://raw.githubusercontent.com/ysron56/exlumiaa-hub/main/"
+local BASE_URL = "https://raw.githubusercontent.com/exlumiaa/exlumiaa-hub/main/"
 local PUSL_SERVICE_ID = "exlumiaa"
 local PUSL_LIB_URL = "https://secure.pandauth.com/pv4/lib"
 local KEYSTORE_PATH = "ExlumiaHub/panda_key.txt"
