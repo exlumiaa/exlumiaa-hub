@@ -1,7 +1,4 @@
-local JFA_GAME_ID = 10690360998
-if tostring(game.GameId) ~= tostring(JFA_GAME_ID) then
-    return
-end
+if tostring(game.GameId) ~= "10690360998" then return end
 
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
@@ -14,21 +11,43 @@ local UserInputService = game:GetService("UserInputService")
 
 local LP = Players.LocalPlayer
 
-local _G_KEY = "_ _jfaTomb"
-local _G_ALIVE = "_ _jfaAlive"
-local _G_LIB = "_ _jfaLib"
-local _G_GUI = "_ _jfaGui"
+local _G_TOMB = "_ _jfaTombOx"
+local _G_ALIVE = "_ _jfaAliveOx"
 
 do
     local alive = rawget(_G, _G_ALIVE)
     if alive == true then
-        rawset(_G, _G_KEY, true)
-        task.wait(0.6)
+        rawset(_G, _G_TOMB, true)
+        task.wait(0.5)
     end
-    rawset(_G, _G_KEY, false)
+    rawset(_G, _G_TOMB, false)
     rawset(_G, _G_ALIVE, true)
 end
 
+-- Kill old Obsidian JFA + old Oxidelib runs
+do
+    pcall(function()
+        for _, gui in ipairs(game:GetService("CoreGui"):GetChildren()) do
+            if gui:IsA("ScreenGui") and (gui.Name == "Obsidian" or gui.Name == "ExlumiaaHub" or gui.Name == "JFALoading") then
+                gui:Destroy()
+            end
+        end
+    end)
+    pcall(function()
+        if LP then
+            local pg = LP:FindFirstChild("PlayerGui") or LP:WaitForChild("PlayerGui")
+            for _, gui in ipairs(pg:GetChildren()) do
+                if gui:IsA("ScreenGui") and (gui.Name == "Obsidian" or gui.Name == "ExlumiaaHub" or gui.Name == "JFALoading") then
+                    gui:Destroy()
+                end
+            end
+        end
+    end)
+end
+
+-- ================================================================
+-- KEY SYSTEM
+-- ================================================================
 if not _G._hubKeyValidated then
     local PUSL_SERVICE_ID = "exlumiaa"
     local PUSL_LIB_URL = "https://secure.pandauth.com/pv4/lib"
@@ -51,7 +70,7 @@ if not _G._hubKeyValidated then
                 kickOnDetect = false,
             })
         end)
-        if not okCfg then PUSL = nil return false end
+        if not okCfg then PUSL = nil; return false end
         return true
     end
 
@@ -167,11 +186,9 @@ if not _G._hubKeyValidated then
         keyBox.Size = UDim2.new(0, 312, 0, 42)
         keyBox.BackgroundColor3 = Color3.fromRGB(27, 29, 40)
         keyBox.BorderSizePixel = 0
-        keyBox.Font = Enum.Font.GothamSemibold
+        keyBox.Font = Enum.Font.GothamBold
         keyBox.TextSize = 16
         keyBox.TextColor3 = Color3.fromRGB(240, 242, 250)
-        keyBox.PlaceholderText = ""
-        keyBox.PlaceholderColor3 = Color3.fromRGB(110, 114, 130)
         keyBox.ClearTextOnFocus = false
         keyBox.Parent = card
         local keyBoxc = Instance.new("UICorner"); keyBoxc.CornerRadius = UDim.new(0, 10); keyBoxc.Parent = keyBox
@@ -252,8 +269,9 @@ if not _G._hubKeyValidated then
         if not unlocked then
             local gateDone = false
             local gui = ksShowGate(function() gateDone = true end)
+
             while not gateDone do
-                if rawget(_G, _G_KEY) then
+                if rawget(_G, _G_TOMB) then
                     pcall(function() gui:Destroy() end)
                     return
                 end
@@ -266,6 +284,9 @@ if not _G._hubKeyValidated then
     end
 end
 
+-- ================================================================
+-- CONFIG
+-- ================================================================
 local Config = {
     autoTrain = false,
     autoCollect = false,
@@ -279,11 +300,10 @@ local Config = {
     jumpEnabled = false,
     jumpPower = 100,
     tpToHome = false,
-    guiKey = Enum.KeyCode.RightShift,
     homeKey = Enum.KeyCode.Q,
 }
 
-local AREAS = {"All", "Celestial Heights", "Coral Reef", "Crystal Mines", "Desert", "Jungle", "Meadow", "Mystic Isles", "Prehistoric", "Savannah", "Winter"}
+local AREAS = { "All", "Celestial Heights", "Coral Reef", "Crystal Mines", "Desert", "Jungle", "Meadow", "Mystic Isles", "Prehistoric", "Savannah", "Winter" }
 
 local AREA_POSITIONS = {
     ["Coral Reef"] = Vector3.new(0.6, 15, -196),
@@ -298,57 +318,15 @@ local AREA_POSITIONS = {
     ["Jungle"] = Vector3.new(-0.6, 906, -757),
 }
 
-local TELEPORT_AREAS = {"Coral Reef", "Meadow", "Mystic Isles", "Prehistoric", "Celestial Heights", "Savannah", "Winter", "Desert", "Crystal Mines", "Jungle"}
+local TELEPORT_AREAS = { "Coral Reef", "Meadow", "Mystic Isles", "Prehistoric", "Celestial Heights", "Savannah", "Winter", "Desert", "Crystal Mines", "Jungle" }
 
 local originalWalkSpeed = 16
 local originalJumpPower = 50
 local homePosition = nil
-local Library = nil
-local healthLabel, posLabel, wsLabel, jpLabel, pingLabel, playerCountLabel
 
-local SETTINGS_PATH = "ExlumiaHub/jfa_settings.json"
-
-local function saveSettings()
-    local data = {
-        autoTrain = Config.autoTrain,
-        autoCollect = Config.autoCollect,
-        collectArea = Config.collectArea,
-        autoPlace = Config.autoPlace,
-        autoTpOpEgg = Config.autoTpOpEgg,
-        guardDropBlock = Config.guardDropBlock,
-        walkEnabled = Config.walkEnabled,
-        walkSpeed = Config.walkSpeed,
-        jumpEnabled = Config.jumpEnabled,
-        jumpPower = Config.jumpPower,
-        tpToHome = Config.tpToHome,
-    }
-    if homePosition then
-        data.homeX = homePosition.X
-        data.homeY = homePosition.Y
-        data.homeZ = homePosition.Z
-    end
-    if type(writefile) == "function" then
-        pcall(writefile, SETTINGS_PATH, game:GetService("HttpService"):JSONEncode(data))
-    end
-end
-
-local function loadSettings()
-    if type(isfile) ~= "function" or not isfile(SETTINGS_PATH) then return false end
-    local ok, raw = pcall(readfile, SETTINGS_PATH)
-    if not ok or type(raw) ~= "string" then return false end
-    local ok2, data = pcall(function() return game:GetService("HttpService"):JSONDecode(raw) end)
-    if not ok2 or type(data) ~= "table" then return false end
-    for k, v in pairs(data) do
-        if Config[k] ~= nil then
-            Config[k] = v
-        end
-    end
-    if data.homeX and data.homeY and data.homeZ then
-        homePosition = Vector3.new(data.homeX, data.homeY, data.homeZ)
-    end
-    return true
-end
-
+-- ================================================================
+-- HELPERS
+-- ================================================================
 local function getRemotes()
     return ReplicatedStorage:WaitForChild("Remotes", 10)
 end
@@ -362,7 +340,9 @@ local function teleportTo(pos)
     hrp.CFrame = CFrame.new(pos + Vector3.new(0, 3, 0))
 end
 
--- ========== Guard Drop Block ==========
+-- ================================================================
+-- GUARD DROP BLOCK
+-- ================================================================
 local guardDropHooked = false
 local oldNamecall = nil
 
@@ -386,7 +366,9 @@ local function hookGuardDrop()
     guardDropHooked = true
 end
 
--- ========== Auto Train ==========
+-- ================================================================
+-- AUTO TRAIN
+-- ================================================================
 local function getSquatDetector()
     local plot = LP:FindFirstChild("Plot")
     if not plot then return nil end
@@ -435,7 +417,6 @@ local function stopTraining()
     end
 end
 
--- ========== Auto Squat Bonus (2X Multiplier) ==========
 local function autoSquatBonusTick()
     if not Config.autoTrain then return end
     if LP:GetAttribute("IsSquatting") ~= true then return end
@@ -450,23 +431,9 @@ local function autoSquatBonusTick()
     pcall(function() bonusReq:FireServer(version) end)
 end
 
--- ========== Auto Collect Eggs ==========
-local function getEggPrompts()
-    local prompts = {}
-    for _, tag in ipairs({"DynamicEggPrompt", "DynamicProximityPrompt"}) do
-        for _, obj in ipairs(CollectionService:GetTagged(tag)) do
-            if obj:IsA("Attachment") or obj:IsA("BasePart") then
-                for _, child in ipairs(obj:GetChildren()) do
-                    if child:IsA("ProximityPrompt") and child.Enabled then
-                        table.insert(prompts, child)
-                    end
-                end
-            end
-        end
-    end
-    return prompts
-end
-
+-- ================================================================
+-- AUTO COLLECT EGGS
+-- ================================================================
 local function getPlotPosition()
     local plot = LP:FindFirstChild("Plot")
     if not plot then return nil end
@@ -586,7 +553,9 @@ local function autoCollectTick()
     task.wait(Config.collectDelay)
 end
 
--- ========== Server Hop ==========
+-- ================================================================
+-- SERVER HOP
+-- ================================================================
 local function serverHop()
     local placeId = game.PlaceId
     local servers = {}
@@ -611,7 +580,9 @@ local function serverHop()
     end
 end
 
--- ========== WalkSpeed & JumpPower ==========
+-- ================================================================
+-- WALKSPEED / JUMPOWER
+-- ================================================================
 local function applyStats(char)
     if not char then return end
     local hum = char:FindFirstChildOfClass("Humanoid")
@@ -624,18 +595,9 @@ local function applyStats(char)
     end
 end
 
--- ========== TP To Home ==========
-UserInputService.InputBegan:Connect(function(input, processed)
-    if processed then return end
-    if input.KeyCode == Config.homeKey and Config.tpToHome then
-        if homePosition then
-            teleportTo(homePosition)
-        end
-    end
-end)
-
--- ========== OP Egg Tracker ==========
-local opEggLabel = nil
+-- ================================================================
+-- OP EGG TRACKER
+-- ================================================================
 local opEggTpSent = false
 
 local function getOpEggCountdown()
@@ -668,10 +630,12 @@ local function opEggTick()
     end
 end
 
--- ========== Main Loops ==========
+-- ================================================================
+-- MAIN LOOP
+-- ================================================================
 task.spawn(function()
     while true do
-        if rawget(_G, _G_KEY) then break end
+        if rawget(_G, _G_TOMB) then break end
         pcall(autoTrainTick)
         pcall(autoSquatBonusTick)
         pcall(autoCollectTick)
@@ -689,108 +653,31 @@ end)
 
 task.spawn(function()
     while true do
-        if rawget(_G, _G_KEY) then break end
+        if rawget(_G, _G_TOMB) then break end
         applyStats(LP.Character)
         task.wait(0.2)
     end
 end)
 
--- ========== Loading Splash ==========
-local splashGui = Instance.new("ScreenGui")
-splashGui.Name = "JFALoading"
-splashGui.ResetOnSpawn = false
-splashGui.IgnoreGuiInset = true
-splashGui.DisplayOrder = 997
-splashGui.Parent = game:GetService("CoreGui"):FindFirstChild("RobloxGui") or game:GetService("CoreGui")
-
-local splashOverlay = Instance.new("Frame")
-splashOverlay.Size = UDim2.fromScale(1, 1)
-splashOverlay.BackgroundColor3 = Color3.fromRGB(9, 10, 15)
-splashOverlay.BackgroundTransparency = 0.1
-splashOverlay.BorderSizePixel = 0
-splashOverlay.Parent = splashGui
-
-local splashCard = Instance.new("Frame")
-splashCard.AnchorPoint = Vector2.new(0.5, 0.5)
-splashCard.Position = UDim2.fromScale(0.5, 0.5)
-splashCard.Size = UDim2.fromOffset(320, 180)
-splashCard.BackgroundColor3 = Color3.fromRGB(18, 19, 27)
-splashCard.BorderSizePixel = 0
-splashCard.Parent = splashGui
-Instance.new("UICorner", splashCard).CornerRadius = UDim.new(0, 16)
-local cardStroke = Instance.new("UIStroke", splashCard)
-cardStroke.Color = Color3.fromRGB(120, 96, 255)
-cardStroke.Transparency = 0.6
-cardStroke.Thickness = 1
-
-local splashTitle = Instance.new("TextLabel")
-splashTitle.Size = UDim2.new(1, 0, 0, 36)
-splashTitle.Position = UDim2.fromOffset(0, 24)
-splashTitle.BackgroundTransparency = 1
-splashTitle.Text = "Jump for Animals!"
-splashTitle.Font = Enum.Font.GothamBold
-splashTitle.TextSize = 22
-splashTitle.TextColor3 = Color3.fromRGB(240, 242, 250)
-splashTitle.Parent = splashCard
-Instance.new("UIGradient", splashTitle).Color = ColorSequence.new(Color3.fromRGB(120, 96, 255), Color3.fromRGB(220, 235, 255))
-
-local splashStatus = Instance.new("TextLabel")
-splashStatus.Size = UDim2.new(1, -40, 0, 16)
-splashStatus.Position = UDim2.fromOffset(20, 72)
-splashStatus.BackgroundTransparency = 1
-splashStatus.Text = "Loading..."
-splashStatus.Font = Enum.Font.Gotham
-splashStatus.TextSize = 12
-splashStatus.TextColor3 = Color3.fromRGB(150, 155, 172)
-splashStatus.Parent = splashCard
-
-local splashBarBg = Instance.new("Frame")
-splashBarBg.Size = UDim2.new(1, -40, 0, 8)
-splashBarBg.Position = UDim2.fromOffset(20, 100)
-splashBarBg.BackgroundColor3 = Color3.fromRGB(27, 29, 40)
-splashBarBg.BorderSizePixel = 0
-splashBarBg.Parent = splashCard
-Instance.new("UICorner", splashBarBg).CornerRadius = UDim.new(0, 4)
-
-local splashBarFill = Instance.new("Frame")
-splashBarFill.Size = UDim2.new(0, 0, 1, 0)
-splashBarFill.BackgroundColor3 = Color3.fromRGB(120, 96, 255)
-splashBarFill.BorderSizePixel = 0
-splashBarFill.Parent = splashBarBg
-Instance.new("UICorner", splashBarFill).CornerRadius = UDim.new(0, 4)
-
-local splashFooter = Instance.new("TextLabel")
-splashFooter.Size = UDim2.new(1, 0, 0, 14)
-splashFooter.Position = UDim2.fromOffset(0, 124)
-splashFooter.BackgroundTransparency = 1
-splashFooter.Text = "by Exlumiaa Hub"
-splashFooter.Font = Enum.Font.Gotham
-splashFooter.TextSize = 11
-splashFooter.TextColor3 = Color3.fromRGB(100, 104, 120)
-splashFooter.Parent = splashCard
-
-local splashDots = ""
-local splashDone = false
-task.spawn(function()
-    local totalSteps = 10
-    local stepTime = 0.15
-    for i = 1, totalSteps do
-        if not splashGui.Parent then break end
-        local dots = string.rep(".", (i - 1) % 4 + 1)
-        splashStatus.Text = "Loading" .. dots
-        local pct = i / totalSteps
-        local tween = game:GetService("TweenService"):Create(splashBarFill, TweenInfo.new(stepTime, Enum.EasingStyle.Cubic, Enum.EasingDirection.Out), {Size = UDim2.new(pct, 0, 1, 0)})
-        tween:Play()
-        task.wait(stepTime)
+-- ================================================================
+-- TP TO HOME KEYBIND (Q)
+-- ================================================================
+UserInputService.InputBegan:Connect(function(input, processed)
+    if processed then return end
+    if input.KeyCode == Config.homeKey and Config.tpToHome then
+        if homePosition then
+            teleportTo(homePosition)
+        end
     end
-    splashStatus.Text = "Ready!"
-    splashDone = true
 end)
 
--- ========== Obsidian UI ==========
+-- ================================================================
+-- UI — Oxidelib
+-- ================================================================
+local Library = nil
 task.spawn(function()
     local ok, ret = pcall(function()
-        return loadstring(game:HttpGet("https://raw.githubusercontent.com/deividcomsono/Obsidian/refs/heads/main/Library.lua"))()
+        return loadstring(game:HttpGet("https://raw.githubusercontent.com/Naellx/Oxidelib/main/Oxidelib.lua"))()
     end)
     Library = ok and ret or nil
 end)
@@ -798,281 +685,334 @@ for _ = 1, 60 do
     if Library ~= nil then break end
     task.wait(0.25)
 end
+if not Library then return end
 
-while not splashDone and splashGui.Parent do
-    task.wait(0.1)
+Library.ConfigFolder = "exlumiaa"
+
+local logoId = nil
+pcall(function()
+    if isfile and isfile("exlumiaa_logo.png") then
+        logoId = getcustomasset("exlumiaa_logo.png")
+    end
+end)
+
+local Window = Library:CreateWindow({
+    Name = "Exlumiaa Hub",
+    BrandSubtitle = "Jump for Animals!",
+    Size = UDim2.fromOffset(700, 490),
+    ToggleKey = Enum.KeyCode.RightShift,
+    LoadingAnimation = true,
+    LoadingText = "Exlumiaa Hub",
+    LoadingSubtitle = "Jump for Animals!",
+    LoadingFooter = "by Exlumiaa Hub",
+    Logo = logoId,
+    GuiName = "ExlumiaaHub",
+})
+
+if logoId then
+    pcall(function()
+        if Window.Logo then Window.Logo.Image = logoId end
+        if Window.Watermark then Window.Watermark.Image = logoId end
+    end)
 end
 
-task.wait(0.3)
-local ts = game:GetService("TweenService")
-local tw = TweenInfo.new(0.35, Enum.EasingStyle.Quad, Enum.EasingDirection.In)
-ts:Create(splashOverlay, tw, {BackgroundTransparency = 1}):Play()
-ts:Create(splashCard, tw, {BackgroundTransparency = 1}):Play()
-ts:Create(splashTitle, tw, {TextTransparency = 1}):Play()
-ts:Create(splashStatus, tw, {TextTransparency = 1}):Play()
-ts:Create(splashFooter, tw, {TextTransparency = 1}):Play()
-ts:Create(splashBarFill, tw, {BackgroundTransparency = 1}):Play()
-ts:Create(splashBarBg, tw, {BackgroundTransparency = 1}):Play()
-ts:Create(cardStroke, tw, {Transparency = 1}):Play()
-task.wait(0.4)
-splashGui:Destroy()
+-- ======================== HOME TAB ========================
+local HomeTab = Window:AddTab({ Name = "Home", Icon = "home", Subtitle = "Info" })
+local InfoSub = HomeTab:AddSubTab("Info")
 
-if Library then
-    loadSettings()
-    local Window = Library:CreateWindow({
-        Title = "Jump for Animals!",
-        Footer = "by Exlumiaa Hub",
-        AutoShow = true,
-        Center = true,
-        Resizable = true,
-        CornerRadius = 6,
-        ToggleKeybind = Config.guiKey,
-    })
+InfoSub:AddSection("Player")
+local labelHealth = InfoSub:AddLabel({ Text = "Health: -" })
+local labelPos = InfoSub:AddLabel({ Text = "Pos: -" })
+local labelWS = InfoSub:AddLabel({ Text = "WalkSpeed: -" })
+local labelJP = InfoSub:AddLabel({ Text = "JumpPower: -" })
 
-    local HomeTab = Window:AddTab("Home", "home")
-    local PlayerSection = HomeTab:AddLeftGroupbox("Player")
-    healthLabel = PlayerSection:AddLabel("Health: -")
-    posLabel = PlayerSection:AddLabel("Pos: -")
-    wsLabel = PlayerSection:AddLabel("WalkSpeed: -")
-    jpLabel = PlayerSection:AddLabel("JumpPower: -")
+InfoSub:AddSection("Server")
+InfoSub:AddLabel({ Text = "Place: " .. tostring(game.PlaceId) })
+InfoSub:AddLabel({ Text = "Job: " .. tostring(game.JobId) })
+local labelPing = InfoSub:AddLabel({ Text = "Ping: --" })
+local labelPlayers = InfoSub:AddLabel({ Text = "Players: --" })
+InfoSub:AddLabel({ Text = "by exlumiaa1" })
 
-    local ServerSection = HomeTab:AddRightGroupbox("Server")
-    ServerSection:AddLabel("Place: " .. tostring(game.PlaceId))
-    ServerSection:AddLabel("Job: " .. tostring(game.JobId))
-    pingLabel = ServerSection:AddLabel("Ping: --")
-    playerCountLabel = ServerSection:AddLabel("Players: --")
-    ServerSection:AddLabel("by exlumiaa1")
+InfoSub:AddDivider()
+local opEggLabel = InfoSub:AddLabel({ Text = "Divine Egg: loading..." })
 
-    local MainTab = Window:AddTab("Main", "zap")
-
-    local TrainSection = MainTab:AddLeftGroupbox("Auto Train")
-    TrainSection:AddToggle("AutoTrain", {
-        Text = "Auto Squat Train",
-        Default = Config.autoTrain,
-        Callback = function(s)
-            Config.autoTrain = s
-            if not s then pcall(stopTraining) end
-        end,
-    })
-    TrainSection:AddLabel("Includes auto 2X bonus")
-
-    local CollectSection = MainTab:AddLeftGroupbox("Auto Collect Eggs")
-    CollectSection:AddToggle("AutoCollect", {
-        Text = "Auto Collect",
-        Default = Config.autoCollect,
-        Callback = function(s)
-            Config.autoCollect = s
-        end,
-    })
-    CollectSection:AddDropdown("CollectArea", {
-        Text = "Area",
-        Values = AREAS,
-        Default = Config.collectArea,
-        Callback = function(v) Config.collectArea = v end,
-    })
-    CollectSection:AddToggle("AutoPlace", {
-        Text = "Auto Place on Plot",
-        Default = Config.autoPlace,
-        Callback = function(s)
-            Config.autoPlace = s
-        end,
-    })
-
-    local GuardSection = MainTab:AddRightGroupbox("Guard")
-    GuardSection:AddToggle("GuardDropBlock", {
-        Text = "Guard Drop Block",
-        Default = Config.guardDropBlock,
-        Callback = function(s)
-            Config.guardDropBlock = s
-            if s then hookGuardDrop() end
-        end,
-    })
-
-    local WalkSection = MainTab:AddRightGroupbox("WalkSpeed")
-    WalkSection:AddToggle("Walkspeed", {
-        Text = "WalkSpeed",
-        Default = Config.walkEnabled,
-        Callback = function(s)
-            Config.walkEnabled = s
-            if not s then
-                local hum = LP.Character and LP.Character:FindFirstChildOfClass("Humanoid")
-                if hum then hum.WalkSpeed = originalWalkSpeed end
+-- Ping/pos/health updater
+task.spawn(function()
+    local avgMs = 0
+    while true do
+        task.wait(1)
+        if rawget(_G, _G_TOMB) then break end
+        pcall(function()
+            local char = LP.Character
+            local hum = char and char:FindFirstChildOfClass("Humanoid")
+            local hrp = char and char:FindFirstChild("HumanoidRootPart")
+            if hum then
+                labelHealth:Set("Health: " .. ("%d/%d"):format(math.floor(hum.Health + 0.5), math.floor(hum.MaxHealth + 0.5)))
             end
-        end,
-    })
-    WalkSection:AddSlider("WalkSpeedValue", {
-        Text = "Speed",
-        Default = Config.walkSpeed,
-        Min = 16,
-        Max = 300,
-        Rounding = 0,
-        Suffix = " studs/s",
-        Callback = function(v) Config.walkSpeed = v end,
-    })
-
-    local JumpSection = MainTab:AddRightGroupbox("JumpPower")
-    JumpSection:AddToggle("JumpPower", {
-        Text = "Jump Power",
-        Default = Config.jumpEnabled,
-        Callback = function(s)
-            Config.jumpEnabled = s
-            if not s then
-                local hum = LP.Character and LP.Character:FindFirstChildOfClass("Humanoid")
-                if hum then hum.JumpPower = originalJumpPower end
+            if hrp then
+                local p = hrp.Position
+                labelPos:Set(("Pos: %.0f, %.0f, %.0f"):format(p.X, p.Y, p.Z))
             end
-        end,
-    })
-    JumpSection:AddSlider("JumpPowerValue", {
-        Text = "Power",
-        Default = Config.jumpPower,
-        Min = 50,
-        Max = 500,
-        Rounding = 0,
-        Suffix = " studs",
-        Callback = function(v) Config.jumpPower = v end,
-    })
-
-    local HomeSection = MainTab:AddLeftGroupbox("TP To Home")
-    HomeSection:AddToggle("TpToHome", {
-        Text = "TP To Home (Toggle Q)",
-        Default = Config.tpToHome,
-        Callback = function(s)
-            Config.tpToHome = s
-            if s then
-                local hrp = LP.Character and LP.Character:FindFirstChild("HumanoidRootPart")
-                if hrp then
-                    homePosition = hrp.Position
-                end
+            if hum then
+                labelWS:Set("WalkSpeed: " .. ("%.1f"):format(hum.WalkSpeed))
+                labelJP:Set("JumpPower: " .. ("%.1f"):format(hum.JumpPower))
             end
-        end,
-    })
-    local homeLabel = HomeSection:AddLabel("Home: not set")
-    task.spawn(function()
-        while true do
-            task.wait(0.5)
-            if rawget(_G, "_ _jfaTomb") then break end
-            if homeLabel then
-                if homePosition then
-                    homeLabel:SetText(("Home: %.0f, %.0f, %.0f"):format(homePosition.X, homePosition.Y, homePosition.Z))
-                else
-                    homeLabel:SetText("Home: not set")
-                end
-            end
-        end
-    end)
+            local stats = game:GetService("Stats")
+            local pingItem = stats.Network.ServerStatsItem["Data Ping"]
+            avgMs = avgMs * 0.8 + pingItem:GetValue() * 0.2
+            labelPing:Set("Ping: " .. ("%dms"):format(math.floor(avgMs + 0.5)))
+            labelPlayers:Set("Players: " .. #Players:GetPlayers())
 
-    local HopSection = MainTab:AddRightGroupbox("Server Hop")
-    HopSection:AddButton({
-        Text = "Server Hop",
-        Callback = serverHop,
-    })
-
-    local tpArea = "Meadow"
-    local TpAreaSection = MainTab:AddLeftGroupbox("Teleport to Area")
-    TpAreaSection:AddDropdown("TpArea", {
-        Text = "Area",
-        Values = TELEPORT_AREAS,
-        Default = tpArea,
-        Callback = function(v) tpArea = v end,
-    })
-    TpAreaSection:AddButton({
-        Text = "Teleport",
-        Callback = function()
-            local pos = AREA_POSITIONS[tpArea]
-            if pos then teleportTo(pos) end
-        end,
-    })
-
-    local OpEggSection = MainTab:AddRightGroupbox("OP Egg Tracker")
-    opEggLabel = OpEggSection:AddLabel("Divine Egg: loading...")
-    OpEggSection:AddToggle("AutoTpOpEgg", {
-        Text = "Auto TP When Spawned",
-        Default = Config.autoTpOpEgg,
-        Callback = function(s) Config.autoTpOpEgg = s; opEggTpSent = false end,
-    })
-
-    task.spawn(function()
-        local avgMs = 0
-        while true do
-            if rawget(_G, _G_KEY) then break end
-            task.wait(0.5)
-            if Library and healthLabel then
-                local char = LP.Character
-                local hum = char and char:FindFirstChildOfClass("Humanoid")
-                local hrp = char and char:FindFirstChild("HumanoidRootPart")
-                if hum then
-                    healthLabel:SetText("Health: " .. ("%d/%d"):format(math.floor(hum.Health + 0.5), math.floor(hum.MaxHealth + 0.5)))
-                end
-                if hrp then
-                    local p = hrp.Position
-                    posLabel:SetText(("Pos: %.0f, %.0f, %.0f"):format(p.X, p.Y, p.Z))
-                end
-                if hum then
-                    wsLabel:SetText("WalkSpeed: " .. ("%.1f"):format(hum.WalkSpeed))
-                end
-                if hum then
-                    jpLabel:SetText("JumpPower: " .. ("%.1f"):format(hum.JumpPower))
-                end
-                local stats = game:GetService("Stats")
-                local pingItem = stats.Network.ServerStatsItem["Data Ping"]
-                avgMs = avgMs * 0.8 + pingItem:GetValue() * 0.2
-                pingLabel:SetText("Ping: " .. ("%dms"):format(math.floor(avgMs + 0.5)))
-                playerCountLabel:SetText("Players: " .. #Players:GetPlayers())
-            end
-            if opEggLabel then
-                local remaining, queued, enabled = getOpEggCountdown()
-                if not enabled then
-                    opEggLabel:SetText("Divine Egg: disabled")
-                elseif queued then
-                    opEggLabel:SetText("Divine Egg: NEXT RESTOCK!")
-                elseif remaining and remaining > 0 then
-                    local m = math.floor(remaining / 60)
-                    local s = remaining % 60
-                    opEggLabel:SetText(("Divine Egg: %dm %ds"):format(m, s))
-                else
-                    opEggLabel:SetText("Divine Egg: SPAWNED!")
-                end
-            end
-        end
-    end)
-
-    local SettingsTab = Window:AddTab("Settings", "settings")
-    local SaveSection = SettingsTab:AddLeftGroupbox("Save / Load")
-    SaveSection:AddButton({
-        Text = "Save Settings",
-        Callback = function()
-            saveSettings()
-            Library:Notify({Title = "Settings", Content = "Settings saved!", Duration = 2})
-        end,
-    })
-    SaveSection:AddButton({
-        Text = "Load Settings",
-        Callback = function()
-            local ok = loadSettings()
-            if ok then
-                Library:Notify({Title = "Settings", Content = "Settings loaded!", Duration = 2})
+            local remaining, queued, enabled = getOpEggCountdown()
+            if not enabled then
+                opEggLabel:Set("Divine Egg: disabled")
+            elseif queued then
+                opEggLabel:Set("Divine Egg: NEXT RESTOCK!")
+            elseif remaining and remaining > 0 then
+                local m = math.floor(remaining / 60)
+                local s = remaining % 60
+                opEggLabel:Set(("Divine Egg: %dm %ds"):format(m, s))
             else
-                Library:Notify({Title = "Settings", Content = "No saved settings found.", Duration = 2})
+                opEggLabel:Set("Divine Egg: SPAWNED!")
             end
-        end,
-    })
-    SaveSection:AddButton({
-        Text = "Reset to Default",
-        Callback = function()
-            if type(delfile) == "function" and type(isfile) == "function" and isfile(SETTINGS_PATH) then
-                pcall(delfile, SETTINGS_PATH)
-            end
-            Library:Notify({Title = "Settings", Content = "Saved settings deleted.", Duration = 2})
-        end,
-    })
+        end)
+    end
+end)
 
-    rawset(_G, _G_LIB, Library)
-    rawset(_G, _G_GUI, Library.ScreenGui)
+-- ======================== MAIN TAB ========================
+local MainTab = Window:AddTab({ Name = "Main", Icon = "zap", Subtitle = "Farming" })
+local FarmSub = MainTab:AddSubTab("Farm")
+local MoveSub = MainTab:AddSubTab("Movement")
+local TpSub = MainTab:AddSubTab("Teleport")
+local GuardSub = MainTab:AddSubTab("Guard")
+
+FarmSub:AddSection("Auto Train")
+FarmSub:AddToggle({ Name = "Auto Squat Train", Default = Config.autoTrain, Flag = "jfa_train", Callback = function(s)
+    Config.autoTrain = s
+    if not s then pcall(stopTraining) end
+end })
+FarmSub:AddLabel({ Text = "Includes auto 2X bonus" })
+
+FarmSub:AddDivider()
+
+FarmSub:AddSection("Auto Collect Eggs")
+FarmSub:AddToggle({ Name = "Auto Collect", Default = Config.autoCollect, Flag = "jfa_collect", Callback = function(s)
+    Config.autoCollect = s
+end })
+FarmSub:AddDropdown({ Name = "Area", Options = AREAS, Default = Config.collectArea, Flag = "jfa_area", Callback = function(v)
+    Config.collectArea = v
+end })
+FarmSub:AddSlider({ Name = "Collect Delay", Min = 1, Max = 20, Default = Config.collectDelay * 10, Suffix = "x0.1s", Flag = "jfa_collect_delay", Callback = function(v)
+    Config.collectDelay = v / 10
+end })
+FarmSub:AddToggle({ Name = "Auto Place on Plot", Default = Config.autoPlace, Flag = "jfa_autoplace", Callback = function(s)
+    Config.autoPlace = s
+end })
+
+MoveSub:AddSection("WalkSpeed")
+MoveSub:AddToggle({ Name = "WalkSpeed", Default = Config.walkEnabled, Flag = "jfa_ws_toggle", Callback = function(s)
+    Config.walkEnabled = s
+    if not s then
+        local hum = LP.Character and LP.Character:FindFirstChildOfClass("Humanoid")
+        if hum then hum.WalkSpeed = originalWalkSpeed end
+    end
+end })
+MoveSub:AddSlider({ Name = "Speed", Min = 16, Max = 300, Default = Config.walkSpeed, Suffix = " studs/s", Flag = "jfa_ws_val", Callback = function(v)
+    Config.walkSpeed = v
+end })
+
+MoveSub:AddDivider()
+
+MoveSub:AddSection("JumpPower")
+MoveSub:AddToggle({ Name = "Jump Power", Default = Config.jumpEnabled, Flag = "jfa_jp_toggle", Callback = function(s)
+    Config.jumpEnabled = s
+    if not s then
+        local hum = LP.Character and LP.Character:FindFirstChildOfClass("Humanoid")
+        if hum then hum.JumpPower = originalJumpPower end
+    end
+end })
+MoveSub:AddSlider({ Name = "Power", Min = 50, Max = 500, Default = Config.jumpPower, Suffix = " studs", Flag = "jfa_jp_val", Callback = function(v)
+    Config.jumpPower = v
+end })
+
+GuardSub:AddSection("Guard")
+GuardSub:AddToggle({ Name = "Guard Drop Block", Default = Config.guardDropBlock, Flag = "jfa_guard", Callback = function(s)
+    Config.guardDropBlock = s
+    if s then hookGuardDrop() end
+end })
+
+-- ======================== TELEPORT SUBTAB ========================
+TpSub:AddSection("TP To Home")
+TpSub:AddToggle({ Name = "TP To Home (Toggle Q)", Default = Config.tpToHome, Flag = "jfa_tphome", Callback = function(s)
+    Config.tpToHome = s
+    if s then
+        local hrp = LP.Character and LP.Character:FindFirstChild("HumanoidRootPart")
+        if hrp then
+            homePosition = hrp.Position
+        end
+    end
+end })
+local homeLabel = TpSub:AddLabel({ Text = "Home: not set" })
+
+TpSub:AddDivider()
+
+TpSub:AddSection("Server Hop")
+TpSub:AddButton({
+    Name = "Server Hop",
+    Primary = true,
+    Callback = function()
+        Window:Notify({ Title = "Server Hop", Content = "Finding a new server...", Type = "info", Duration = 3 })
+        task.spawn(function()
+            local ok, err = pcall(serverHop)
+            if not ok then
+                Window:Notify({ Title = "Server Hop", Content = "Failed: " .. tostring(err), Type = "error", Duration = 5 })
+            end
+        end)
+    end,
+})
+
+TpSub:AddDivider()
+
+TpSub:AddSection("Teleport to Area")
+local tpArea = "Meadow"
+TpSub:AddDropdown({ Name = "Area", Options = TELEPORT_AREAS, Default = tpArea, Flag = "jfa_tparea", Callback = function(v)
+    tpArea = v
+end })
+TpSub:AddButton({
+    Name = "Teleport",
+    Primary = false,
+    Callback = function()
+        local pos = AREA_POSITIONS[tpArea]
+        if pos then teleportTo(pos) end
+    end,
+})
+
+TpSub:AddDivider()
+TpSub:AddSection("OP Egg Tracker")
+TpSub:AddToggle({ Name = "Auto TP When Spawned", Default = Config.autoTpOpEgg, Flag = "jfa_opegg", Callback = function(s)
+    Config.autoTpOpEgg = s
+    opEggTpSent = false
+end })
+
+-- Home label updater
+task.spawn(function()
+    while true do
+        task.wait(0.5)
+        if rawget(_G, _G_TOMB) then break end
+        if homeLabel then
+            if homePosition then
+                homeLabel:Set(("Home: %.0f, %.0f, %.0f"):format(homePosition.X, homePosition.Y, homePosition.Z))
+            else
+                homeLabel:Set("Home: not set")
+            end
+        end
+    end
+end)
+
+-- ======================== SETTINGS TAB ========================
+local SettingsTab = Window:AddTab({ Name = "Settings", Icon = "settings", Subtitle = "Config" })
+local ConfigSub = SettingsTab:AddSubTab("Config")
+local HopSub = SettingsTab:AddSubTab("Server Hop")
+
+ConfigSub:AddSection("Config")
+local selectedConfig = ""
+
+local configDropdown = ConfigSub:AddDropdown({
+    Name = "Saved Configs",
+    Options = {},
+    Default = "",
+    Flag = "jfa_config_selected",
+    Callback = function(v) selectedConfig = v end,
+})
+
+local function refreshConfigList()
+    local configs = Library:ListConfigs()
+    if configDropdown then
+        configDropdown:SetOptions(configs)
+        configDropdown:Refresh()
+    end
 end
 
--- ========== Cleanup ==========
+local configInput = ConfigSub:AddInput({
+    Name = "Config Name",
+    Default = "",
+    Placeholder = "Enter config name...",
+    Flag = "jfa_config_name",
+})
+
+ConfigSub:AddDivider()
+
+ConfigSub:AddButton({
+    Name = "Save Config",
+    Primary = true,
+    Callback = function()
+        local name = configInput:Get()
+        if not name or name == "" then
+            Window:Notify({ Title = "Config", Content = "Enter a name first!", Type = "warning", Duration = 3 })
+            return
+        end
+        local ok = Library:SaveConfig(name)
+        if ok then
+            refreshConfigList()
+            Window:Notify({ Title = "Config", Content = "Saved: " .. name, Type = "success", Duration = 3 })
+        else
+            Window:Notify({ Title = "Config", Content = "Save failed!", Type = "error", Duration = 3 })
+        end
+    end,
+})
+
+ConfigSub:AddButton({
+    Name = "Load Config",
+    Primary = false,
+    Callback = function()
+        if not selectedConfig or selectedConfig == "" then
+            Window:Notify({ Title = "Config", Content = "Select a config first!", Type = "warning", Duration = 3 })
+            return
+        end
+        local ok = Library:LoadConfig(selectedConfig)
+        if ok then
+            Window:Notify({ Title = "Config", Content = "Loaded: " .. selectedConfig, Type = "success", Duration = 3 })
+        else
+            Window:Notify({ Title = "Config", Content = "Failed to load!", Type = "error", Duration = 3 })
+        end
+    end,
+})
+
+ConfigSub:AddButton({
+    Name = "Delete Config",
+    Primary = false,
+    Callback = function()
+        if not selectedConfig or selectedConfig == "" then
+            Window:Notify({ Title = "Config", Content = "Select a config first!", Type = "warning", Duration = 3 })
+            return
+        end
+        Library:DeleteConfig(selectedConfig)
+        selectedConfig = ""
+        refreshConfigList()
+        Window:Notify({ Title = "Config", Content = "Deleted config.", Type = "info", Duration = 3 })
+    end,
+})
+
+HopSub:AddSection("Server Hop")
+HopSub:AddButton({
+    Name = "Server Hop",
+    Primary = true,
+    Callback = function()
+        Window:Notify({ Title = "Server Hop", Content = "Finding a new server...", Type = "info", Duration = 3 })
+        task.spawn(function()
+            local ok, err = pcall(serverHop)
+            if not ok then
+                Window:Notify({ Title = "Server Hop", Content = "Failed: " .. tostring(err), Type = "error", Duration = 5 })
+            end
+        end)
+    end,
+})
+
+-- ================================================================
+-- CLEANUP
+-- ================================================================
 local function teardown()
-    rawset(_G, _G_KEY, true)
+    rawset(_G, _G_TOMB, true)
     rawset(_G, _G_ALIVE, nil)
     pcall(stopTraining)
     local char = LP.Character
@@ -1083,17 +1023,14 @@ local function teardown()
             hum.JumpPower = originalJumpPower
         end
     end
-    local lib = rawget(_G, _G_LIB)
-    if lib and type(lib.Unload) == "function" then
-        pcall(lib.Unload, lib)
-    else
-        local gui = rawget(_G, _G_GUI)
-        if gui then pcall(function() gui:Destroy() end) end
+    if Window and type(Window.Destroy) == "function" then
+        pcall(function() Window:Destroy() end)
     end
-    rawset(_G, _G_LIB, nil)
-    rawset(_G, _G_GUI, nil)
 end
 
 if STATE and STATE.onCleanup then
     STATE.onCleanup(teardown)
 end
+
+-- Load last config on startup (after UI exists)
+pcall(function() Library:LoadConfig("default") end)
