@@ -19,6 +19,24 @@ do
 end
 
 do
+    pcall(function()
+        for _, gui in ipairs(game:GetService("CoreGui"):GetChildren()) do
+            if gui:IsA("ScreenGui") and (gui.Name == "Oxidelib" or gui.Name == "ExlumiaaHub" or gui.Name == "Obsidian") then
+                gui:Destroy()
+            end
+        end
+    end)
+    pcall(function()
+        local pg = LP:FindFirstChild("PlayerGui") or LP:WaitForChild("PlayerGui")
+        for _, gui in ipairs(pg:GetChildren()) do
+            if gui:IsA("ScreenGui") and (gui.Name == "Oxidelib" or gui.Name == "ExlumiaaHub" or gui.Name == "Obsidian") then
+                gui:Destroy()
+            end
+        end
+    end)
+end
+
+do
     local ok = pcall(function()
         if rawget(_G, "_dreamcarBWHooked") then return end
         local bw = require(ReplicatedStorage.Shared.Packages.ByteNet.process.bufferWriter)
@@ -1146,11 +1164,18 @@ end)
 local OxidelibUrl = "https://raw.githubusercontent.com/Naellx/Oxidelib/main/Oxidelib.lua"
 local Library = loadstring(game:HttpGet(OxidelibUrl))()
 local Window = Library:CreateWindow({
-    Title = "Dream Car Collection",
+    Name = "Exlumiaa Hub",
+    BrandSubtitle = "Dream Car Collection",
+    Title = "Exlumiaa Hub",
     Logo = 72522294315389,
     Folder = "exlumia",
     ToggleKey = Enum.KeyCode.RightShift,
     AllowMultiple = false,
+    LoadingText = "Exlumiaa Hub",
+    LoadingSubtitle = "Dream Car Collection",
+    LoadingFooter = "by Exlumiaa Hub",
+    StatusText = "Exlumiaa Hub ready",
+    GuiName = "ExlumiaaHub",
 })
 
 local MainTab = Window:AddTab({Name = "Main", Icon = "agriculture", Subtitle = "Main Features"})
@@ -1158,7 +1183,9 @@ local PlayerTab = Window:AddTab({Name = "Player", Icon = "person", Subtitle = "L
 local VisualTab = Window:AddTab({Name = "Visuals", Icon = "eye", Subtitle = "ESP"})
 local SettingsTab = Window:AddTab({Name = "Settings", Icon = "settings", Subtitle = "Config"})
 
+local FarmSub = MainTab:AddSubTab("Crate Farm")
 local RaceSub = MainTab:AddSubTab("Race")
+local RewardsSub = MainTab:AddSubTab("Rewards")
 RaceSub:AddSection("Race Automation")
 RaceSub:AddToggle({Name = "Auto Launch", Description = "Rev hold + perfect launch", Default = false, Callback = function(v)
     Config.autoLaunch = v
@@ -1179,7 +1206,6 @@ RaceSub:AddToggle({Name = "Unlimited Nitro", Description = "Force full nitro, no
     if v then pcall(resolveNitroUpvalue) else pcall(releaseRaceInputs) end
 end})
 
-local FarmSub = MainTab:AddSubTab("Crate Farm")
 FarmSub:AddSection("Auto Spawn")
 FarmSub:AddToggle({Name = "Auto Spawn Crates", Default = false, Callback = function(v)
     Config.autoSpawnCrates = v
@@ -1254,7 +1280,6 @@ FarmSub:AddMultiDropdown({
     end,
 })
 
-local RewardsSub = MainTab:AddSubTab("Rewards")
 RewardsSub:AddSection("Auto Rewards")
 RewardsSub:AddToggle({Name = "Auto Rebirth", Default = false, Callback = function(v) Config.autoRebirth = v end})
 RewardsSub:AddToggle({Name = "Auto Claim Quests", Default = false, Callback = function(v)
@@ -1323,9 +1348,27 @@ ServerSub:AddButton({Name = "Server Hop", Primary = true, Callback = function()
 end})
 
 task.spawn(function()
-    task.wait(1)
-    for _, v in ipairs(game:GetService("CoreGui"):GetDescendants()) do
-        if v:IsA("TextLabel") and v.Text:find("Oxidelib is ready") then v.Text = "" end
+    local function scrub(root)
+        for _, v in ipairs(root:GetDescendants()) do
+            if v:IsA("TextLabel") then
+                local t = v.Text
+                if t:find("Oxidelib is ready") or t:find("Exlumiaa Hub is ready") then
+                    v.Text = ""
+                elseif t == "Oxidelib" then
+                    v.Text = "Exlumiaa Hub"
+                elseif t:find("Oxidelib") then
+                    v.Text = (t:gsub("Oxidelib", "Exlumiaa Hub"))
+                end
+            end
+        end
+    end
+    for _ = 1, 20 do
+        task.wait(0.5)
+        pcall(function() scrub(game:GetService("CoreGui")) end)
+        pcall(function()
+            local pg = LP:FindFirstChild("PlayerGui")
+            if pg then scrub(pg) end
+        end)
     end
 end)
 
