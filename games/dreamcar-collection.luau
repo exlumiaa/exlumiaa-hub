@@ -321,6 +321,7 @@ local Config = {
     autoDaily = false,
     autoFreeReward = false,
     autoUpgrades = false,
+    autoClean = false,
     walkSpeed = 16,
     walkSpeedEnabled = false,
     jumpPower = 50,
@@ -660,6 +661,525 @@ local function tryPlaceCrate()
 
     placeCrateBusy = false
 end
+
+-- ========== AUTO CLEAN ==========
+local cleanSession = nil
+local cleanListenerReady = false
+local cleanBusy = false
+local cleanLastStart = 0
+local cleanSprayInput = nil
+
+local function getShineUtil()
+    local ok, m = pcall(function() return require(ReplicatedStorage.Shared.Utility.CarShineUtil) end)
+    return ok and m or nil
+end
+
+local function getCleaningCtrl()
+    local ok, m = pcall(function()
+        local ctrl = require(ReplicatedStorage.Client.UI.Systems.CleaningController)
+        pcall(function() ctrl.Start() end)
+        return ctrl
+    end)
+    return ok and m or nil
+end
+
+local function findCleaningTool()
+    local ch = LP:FindFirstChild("Backpack")
+    if ch then
+        for _, t in ipairs(ch:GetChildren()) do
+            if t:IsA("Tool") and t:GetAttribute("CleaningTool") == true then
+                return t
+            end
+        end
+    end
+    local char = LP.Character
+    if char then
+        for _, t in ipairs(char:GetChildren()) do
+            if t:IsA("Tool") and t:GetAttribute("CleaningTool") == true then
+                return t
+            end
+        end
+    end
+    return nil
+end
+
+local function findDisplayModel(carId)
+    for _, j in ipairs(CollectionService:GetTagged("Plot")) do
+        if j:IsA("Model") and j:IsDescendantOf(workspace)
+            and (j:GetAttribute("OwnerUserId") == LP.UserId or j:GetAttribute("Owner") == LP.Name)
+        then
+            for _, child in ipairs(j:GetChildren()) do
+                if child:IsA("Model")
+                    and child:GetAttribute("CleaningDisplayCar") == true
+                    and child:GetAttribute("FavoriteCarDisplay") ~= true
+                    and child:GetAttribute("ClientCollectionDisplay") ~= true
+                    and tostring(child:GetAttribute("CleaningCarId") or "") == tostring(carId or "")
+                then
+                    return child
+                end
+            end
+        end
+    end
+    return nil
+end
+
+local function pickEligibleCar()
+    local shine = getShineUtil()
+    local c = getPlayerContainer()
+    if not shine or not c then return nil end
+    local ok, cars = pcall(function() return c:GetValue("Cars") end)
+    if not ok or type(cars) ~= "table" then return nil end
+    local slots = c:GetValue("CarSlots")
+    local rebirths = c:GetValue("Rebirths")
+    for id, data in pairs(cars) do
+        if type(id) == "string" and type(data) == "table" then
+            local okE, eligible = pcall(function()
+                return shine.IsInCollection(id, slots, rebirths)
+                    and shine.HasWashablePanels(data)
+                    and not shine.IsCarShiny(data)
+            end)
+            if okE and eligible then return id end
+        end
+    end
+    return nil
+end
+
+local function ensureCleanListener()
+    if cleanListenerReady then return end
+    local net = getNet()
+    if not net or not net.Cleaning or not net.Cleaning.SessionState then return end
+    cleanListenerReady = true
+    net.Cleaning.SessionState.listen(function(p)
+        if type(p) ~= "table" then return end
+        local ev = tostring(p.event or "")
+        if ev == "Started" then
+            cleanSession = {
+                mode = tostring(p.mode or "Manual"),
+                carId = tostring(p.carId or ""),
+                stage = tostring(p.stage or "Foam"),
+                startedAt = tick(),
+            }
+        elseif ev == "Stage" and cleanSession then
+            cleanSession.stage = tostring(p.stage or cleanSession.stage)
+        elseif ev == "Completed" or ev == "Stopped" then
+            cleanSession = nil
+        end
+    end)
+end
+
+local function faceDisplay(model)
+    local hrp = getHRP()
+    if not hrp or not model then return end
+    local ok, pos = pcall(function()
+        local cf = model:GetBoundingBox()
+        return cf.Position
+    end)
+    if not ok or not pos then return end
+    local target = Vector3.new(pos.X, hrp.Position.Y, pos.Z)
+    local dist = (Vector3.new(pos.X, 0, pos.Z) - Vector3.new(hrp.Position.X, 0, hrp.Position.Z)).Magnitude
+    if dist > 0.5 then
+        hrp.CFrame = CFrame.lookAt(hrp.Position, target)
+    end
+end
+
+local function collectAimTargets(model, stage)
+    local targets = {}
+    if not model then return targets end
+    if stage == "Rinse" then
+        local foam = model:FindFirstChild("LocalCleaningFoam")
+        if foam then
+            for _, d in ipairs(foam:GetDescendants()) do
+                if d:IsA("BasePart") and d:GetAttribute("CleaningFoam") == true then
+                    table.insert(targets, d)
+                end
+            end
+        end
+    end
+    if #targets == 0 then
+        local shine = getShineUtil()
+        if shine then
+            local ok, panels = pcall(function() return shine.GetPanels(model) end)
+            if ok and type(panels) == "table" then
+                for _, p in ipairs(panels) do
+                    if p:IsA("BasePart") then
+                        table.insert(targets, p)
+                    end
+                end
+            end
+        end
+        if #targets == 0 then
+            for _, d in ipairs(model:GetDescendants()) do
+                if d:IsA("BasePart") and string.lower(d.Name) == "shiny" then
+                    table.insert(targets, d)
+                end
+            end
+        end
+    end
+    return targets
+end
+
+local function getLiveSession(ctrl)
+    if not ctrl or not ctrl._BeginSprayInput then return nil end
+    local ok, s = pcall(debug.getupvalue, ctrl._BeginSprayInput, 1)
+    if ok and type(s) == "table" then return s end
+    return nil
+end
+
+local function syncLiveClean(ctrl)
+    if not ctrl or not cleanSession then return nil end
+    local live = getLiveSession(ctrl)
+    if live then
+        cleanSession.stage = tostring(live.stage or cleanSession.stage)
+        return live
+    end
+    return nil
+end
+
+local function ensureRinseCanQuery(model)
+    if not model then return end
+    local foam = model:FindFirstChild("LocalCleaningFoam")
+    if not foam then return end
+    for _, d in ipairs(foam:GetDescendants()) do
+        if d:IsA("BasePart") and d:GetAttribute("CleaningFoam") == true
+            and d:GetAttribute("CleaningRinsePending") ~= true
+        then
+            pcall(function() d.CanQuery = true end)
+        end
+    end
+end
+
+local function repairLiveSession(live, model)
+    if not live then return end
+    pcall(function()
+        if model and (not live.model or not live.model:IsDescendantOf(workspace)) then
+            live.model = model
+        end
+        if live.foamFolder and live.model and live.foamFolder.Parent ~= live.model
+            and live.model:IsDescendantOf(workspace)
+        then
+            live.foamFolder.Parent = live.model
+        end
+        if live.ready == false and live.model and live.model:IsDescendantOf(workspace)
+            and live.foamFolder and live.foamFolder.Parent == live.model
+        then
+            live.ready = true
+        end
+    end)
+end
+
+local function nearestTarget(targets, origin)
+    local best, bestD
+    for _, t in ipairs(targets) do
+        if t.Parent then
+            local d = (t.Position - origin).Magnitude
+            if not bestD or d < bestD then
+                best, bestD = t, d
+            end
+        end
+    end
+    return best, bestD
+end
+
+local function aimAtSurface(part)
+    local cam = workspace.CurrentCamera
+    if not cam or not part or not part.Parent then return false end
+    local cf = part.CFrame
+    local half = part.Size * 0.5
+    local toCam = cam.CFrame.Position - part.Position
+    local localToCam = cf:VectorToObjectSpace(toCam)
+    local ax, ay, az = math.abs(localToCam.X), math.abs(localToCam.Y), math.abs(localToCam.Z)
+    local margin = 0.82
+    local u = (math.random() * 2 - 1) * half.X * margin
+    local v = (math.random() * 2 - 1) * half.Y * margin
+    local w = (math.random() * 2 - 1) * half.Z * margin
+    local localPos
+    if ax >= ay and ax >= az then
+        localPos = Vector3.new((localToCam.X >= 0 and half.X or -half.X), v, w)
+    elseif ay >= az then
+        localPos = Vector3.new(u, (localToCam.Y >= 0 and half.Y or -half.Y), w)
+    else
+        localPos = Vector3.new(u, v, (localToCam.Z >= 0 and half.Z or -half.Z))
+    end
+    local vp = cam:WorldToViewportPoint(cf:PointToWorldSpace(localPos))
+    if vp.Z < 0 then return false end
+    local insetX, insetY = 0, 0
+    pcall(function()
+        local inset = game:GetService("GuiService"):GetGuiInset()
+        insetX, insetY = inset.X, inset.Y
+    end)
+    local sx, sy = vp.X - insetX, vp.Y - insetY
+    if not cleanSprayInput then
+        cleanSprayInput = {
+            UserInputType = Enum.UserInputType.Touch,
+            Position = Vector3.new(sx, sy, 0),
+            KeyCode = Enum.KeyCode.Unknown,
+        }
+    else
+        cleanSprayInput.Position = Vector3.new(sx, sy, 0)
+    end
+    return true
+end
+
+local function endCleanSpray()
+    if not cleanSprayInput then return end
+    local ctrl = getCleaningCtrl()
+    if ctrl then
+        pcall(function() ctrl._EndSprayInput(cleanSprayInput) end)
+        local live = getLiveSession(ctrl)
+        if live and live.sprayInput == cleanSprayInput then
+            pcall(function() ctrl._EndSprayInput(live.sprayInput) end)
+        end
+    end
+    cleanSprayInput = nil
+end
+
+local function ensureSpraying(ctrl, model)
+    if not ctrl then return false end
+    if not cleanSprayInput then return false end
+    local session = getLiveSession(ctrl)
+    if not session then return false end
+    repairLiveSession(session, model)
+    local liveInput = session.sprayInput
+    if session.spraying and liveInput == cleanSprayInput then
+        pcall(function() ctrl._ChangeSprayInput(cleanSprayInput) end)
+        return true
+    end
+    if liveInput and liveInput ~= cleanSprayInput then
+        pcall(function() ctrl._EndSprayInput(liveInput) end)
+    elseif liveInput == cleanSprayInput and not session.spraying then
+        pcall(function() ctrl._EndSprayInput(cleanSprayInput) end)
+    end
+    pcall(function() ctrl._BeginSprayInput(cleanSprayInput) end)
+    session = getLiveSession(ctrl)
+    if session and session.spraying and session.sprayInput == cleanSprayInput then
+        return true
+    end
+    return session and session.spraying == true
+end
+
+local function approachModel(model)
+    local hrp = getHRP()
+    local hum = getHum()
+    if not hrp or not hum or not model then return end
+    local ok, pos = pcall(function()
+        local cf = model:GetBoundingBox()
+        return cf.Position
+    end)
+    if not ok or not pos then return end
+    local flat = Vector3.new(pos.X - hrp.Position.X, 0, pos.Z - hrp.Position.Z)
+    if flat.Magnitude > 11 then
+        local dest = Vector3.new(pos.X - flat.Unit.X * 8, hrp.Position.Y, pos.Z - flat.Unit.Z * 8)
+        hum:MoveTo(dest)
+        local t0 = tick()
+        while tick() - t0 < 3 do
+            if rawget(_G, _G_TOMB) then return end
+            local d = (Vector3.new(pos.X - hrp.Position.X, 0, pos.Z - hrp.Position.Z)).Magnitude
+            if d <= 11 then break end
+            task.wait(0.1)
+        end
+    end
+    faceDisplay(model)
+end
+
+local function runManualClean()
+    local ctrl = getCleaningCtrl()
+    if not ctrl or not cleanSession then return end
+
+    local tool, model
+    local t0 = tick()
+    while tick() - t0 < 15 and cleanSession and Config.autoClean do
+        if rawget(_G, _G_TOMB) then return end
+        tool = findCleaningTool()
+        model = findDisplayModel(cleanSession.carId)
+        if tool and model then break end
+        task.wait(0.3)
+    end
+    if not tool or not model or not cleanSession then return end
+
+    local hum = getHum()
+    if not hum then return end
+    if tool.Parent ~= LP.Character then
+        hum:EquipTool(tool)
+        local t1 = tick()
+        while tool.Parent ~= LP.Character and tick() - t1 < 2 do
+            task.wait(0.05)
+        end
+    end
+    if tool.Parent ~= LP.Character then return end
+
+    approachModel(model)
+    task.wait(0.3)
+
+    while cleanSession and Config.autoClean do
+        if rawget(_G, _G_TOMB) then break end
+
+        syncLiveClean(ctrl)
+        repairLiveSession(getLiveSession(ctrl), model)
+
+        local equipped = findCleaningTool()
+        if not equipped then break end
+        if equipped.Parent ~= LP.Character then
+            hum:EquipTool(equipped)
+            task.wait(0.3)
+        end
+
+        if not model.Parent then
+            model = findDisplayModel(cleanSession.carId)
+            if not model then break end
+            approachModel(model)
+        end
+
+        if cleanSession.stage == "Rinse" then
+            ensureRinseCanQuery(model)
+        end
+
+        local targets = collectAimTargets(model, cleanSession.stage)
+        if #targets == 0 then
+            if not cleanSprayInput then
+                local hrp = getHRP()
+                if hrp then
+                    local cf = model:GetBoundingBox()
+                    local cam = workspace.CurrentCamera
+                    if cam then
+                        local vp = cam:WorldToViewportPoint(cf.Position)
+                        if vp.Z > 0 then
+                            local insetX, insetY = 0, 0
+                            pcall(function()
+                                local inset = game:GetService("GuiService"):GetGuiInset()
+                                insetX, insetY = inset.X, inset.Y
+                            end)
+                            cleanSprayInput = {
+                                UserInputType = Enum.UserInputType.Touch,
+                                Position = Vector3.new(vp.X - insetX, vp.Y - insetY, 0),
+                                KeyCode = Enum.KeyCode.Unknown,
+                            }
+                        end
+                    end
+                end
+            end
+            ensureSpraying(ctrl, model)
+            task.wait(0.15)
+        else
+            local hrp = getHRP()
+            local origin = hrp and hrp.Position or Vector3.zero
+            local part
+            if cleanSession.stage == "Rinse" then
+                part = nearestTarget(targets, origin)
+                if part then
+                    local d = (part.Position - origin).Magnitude
+                    if d > 14 then
+                        local flat = Vector3.new(part.Position.X - origin.X, 0, part.Position.Z - origin.Z)
+                        if flat.Magnitude > 0.5 and hum then
+                            local dest = Vector3.new(
+                                part.Position.X - flat.Unit.X * 7,
+                                origin.Y,
+                                part.Position.Z - flat.Unit.Z * 7
+                            )
+                            hum:MoveTo(dest)
+                            task.wait(0.12)
+                        end
+                        faceDisplay(model)
+                    end
+                end
+            else
+                part = targets[math.random(1, #targets)]
+            end
+            if part and part.Parent and aimAtSurface(part) and cleanSprayInput then
+                ensureSpraying(ctrl, model)
+            else
+                ensureSpraying(ctrl, model)
+            end
+        end
+
+        task.wait(0.05)
+    end
+
+    endCleanSpray()
+end
+
+local function tryStartClean()
+    if cleanBusy then return end
+    if cleanSession then
+        if Config.autoClean and cleanSession.mode == "Manual" then
+            cleanBusy = true
+            pcall(runManualClean)
+            cleanBusy = false
+        end
+        return
+    end
+    if tick() - cleanLastStart < 5 then return end
+
+    local net = getNet()
+    if not net then return end
+    ensureCleanListener()
+    getCleaningCtrl()
+
+    local carId = pickEligibleCar()
+    if not carId then return end
+
+    cleanBusy = true
+    cleanLastStart = tick()
+
+    safeSend(function()
+        net.Cleaning.RequestStart.send({mode = "Auto", carId = carId})
+    end)
+    local t0 = tick()
+    while tick() - t0 < 2.5 and not cleanSession and Config.autoClean do
+        if rawget(_G, _G_TOMB) then break end
+        task.wait(0.1)
+    end
+
+    if not cleanSession and Config.autoClean then
+        safeSend(function()
+            net.Cleaning.RequestStart.send({mode = "Manual", carId = carId})
+        end)
+        t0 = tick()
+        while tick() - t0 < 3 and not cleanSession and Config.autoClean do
+            if rawget(_G, _G_TOMB) then break end
+            task.wait(0.1)
+        end
+    end
+
+    if cleanSession and Config.autoClean then
+        if cleanSession.mode == "Manual" then
+            pcall(runManualClean)
+            while cleanSession and Config.autoClean do
+                if rawget(_G, _G_TOMB) then break end
+                task.wait(0.5)
+                pcall(runManualClean)
+            end
+        else
+            while cleanSession and Config.autoClean do
+                if rawget(_G, _G_TOMB) then break end
+                task.wait(1)
+            end
+        end
+    end
+
+    endCleanSpray()
+    cleanBusy = false
+end
+
+local function stopAutoClean()
+    Config.autoClean = false
+    if cleanSession then
+        local net = getNet()
+        if net then
+            safeSend(function() net.Cleaning.RequestStop.send({}) end)
+        end
+    end
+    endCleanSpray()
+end
+
+task.spawn(function()
+    while true do
+        if rawget(_G, _G_TOMB) then break end
+        if Config.autoClean then
+            pcall(tryStartClean)
+        end
+        task.wait(2)
+    end
+end)
 
 -- ========== AUTO RACE ==========
 local raceCtrl, raceCfg, racePerform, raceSend
@@ -1185,6 +1705,7 @@ local SettingsTab = Window:AddTab({Name = "Settings", Icon = "settings", Subtitl
 
 local FarmSub = MainTab:AddSubTab("Crate Farm")
 local RaceSub = MainTab:AddSubTab("Race")
+local CleaningSub = MainTab:AddSubTab("Cleaning")
 local RewardsSub = MainTab:AddSubTab("Rewards")
 RaceSub:AddSection("Race Automation")
 RaceSub:AddToggle({Name = "Auto Launch", Description = "Rev hold + perfect launch", Default = false, Callback = function(v)
@@ -1288,6 +1809,15 @@ end})
 RewardsSub:AddToggle({Name = "Auto Daily Reward", Default = false, Callback = function(v) Config.autoDaily = v end})
 RewardsSub:AddToggle({Name = "Auto Free Reward", Default = false, Callback = function(v) Config.autoFreeReward = v end})
 RewardsSub:AddToggle({Name = "Auto Buy Upgrades", Default = false, Callback = function(v) Config.autoUpgrades = v end})
+
+CleaningSub:AddSection("Cleaning")
+CleaningSub:AddToggle({Name = "Auto Clean", Description = "Clean shiny cars for gems", Default = false, Callback = function(v)
+    if v then
+        Config.autoClean = true
+    else
+        stopAutoClean()
+    end
+end})
 
 local PlayerSub = PlayerTab:AddSubTab("Movement")
 PlayerSub:AddSection("Speed")
