@@ -14,10 +14,10 @@ do
     if ok and type(m) == "table" then ES = m end
 end
 
-local _G_TOMB = "_ _arcFpsTomb"
-local _G_ALIVE = "_ _arcFpsAlive"
-local _G_GEN = "_ _arcFpsGen"
-local _G_GUI = "_ _arcFpsGui"
+local _G_TOMB = "_ _snprTomb"
+local _G_ALIVE = "_ _snprAlive"
+local _G_GEN = "_ _snprGen"
+local _G_GUI = "_ _snprGui"
 
 pcall(cleardrawcache)
 
@@ -322,7 +322,7 @@ for _ = 1, 60 do
 end
 if not Library then return end
 
-Library.ConfigFolder = "exlumiaa/arcadefps"
+Library.ConfigFolder = "exlumiaa/sniperarena"
 
 local saveQueued = false
 local function queueSave()
@@ -770,7 +770,7 @@ local function updateESP(entry)
     if Config.espChams then
         if not d.chamsHighlight or not d.chamsHighlight.Parent then
             local h = Instance.new("Highlight")
-            h.Name = "_ArcadeChams"
+            h.Name = "_SniperChams"
             h.FillTransparency = 0.5
             h.OutlineTransparency = 0
             h.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
@@ -870,7 +870,7 @@ do
     end
 end
 
-local ORIG_KEY = "_ _arcFpsOrig"
+local ORIG_KEY = "_ _snprOrig"
 
 local function redirectShot(args)
     local target = getClosestTarget()
@@ -1069,13 +1069,13 @@ end)
 
 local Window = Library:CreateWindow({
     Name = "Exlumiaa Hub",
-    BrandSubtitle = "[Arcade] Beginner",
+    BrandSubtitle = "Sniper Arena",
     Size = UDim2.fromOffset(540, 460),
     Scale = 1.2,
     ToggleKey = Enum.KeyCode.RightShift,
     LoadingAnimation = true,
     LoadingText = "Exlumiaa Hub",
-    LoadingSubtitle = "[Arcade] Beginner",
+    LoadingSubtitle = "Sniper Arena",
     LoadingFooter = "by Exlumiaa Hub",
     GuiName = "ExlumiaaHub",
     Logo = 72522294315389,
@@ -1344,4 +1344,4 @@ ConfigSub:AddLabel({ Text = "Toggle Menu: RightShift" })
 pcall(function() Library:LoadConfig("default") end)
 pcall(refreshConfigList)
 
-print("[ExlumiaaHub] Arcade FPS Hub loaded!")
+print("[ExlumiaaHub] Sniper Arena Hub loaded!")
