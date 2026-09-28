@@ -6,7 +6,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local LP = Players.LocalPlayer
 local Camera = workspace.CurrentCamera
-local STATE = STATE
+local STATE = rawget(_G, "STATE") or (type(getgenv) == "function" and rawget(getgenv(), "STATE") or nil)
 
 local ES = nil
 do
@@ -377,6 +377,9 @@ local Config = {
     silentEnabled = false,
     fovCircle = true,
     aimWallCheck = true,
+    triggerEnabled = false,
+    triggerDelay = 60,
+    fpsBoost = false,
 }
 
 local ENEMY_COLOR = Color3.fromRGB(255, 0, 80)
@@ -1254,9 +1257,159 @@ CombatSub:AddToggle({
 CombatSub:AddLabel({ Text = "Bullets steer to the nearest target inside FOV" })
 CombatSub:AddLabel({ Text = "Shares aimbot FOV and prediction settings" })
 
+local UIS = game:GetService("UserInputService")
+local Lighting = game:GetService("Lighting")
+local triggerThread = nil
+local lastTriggerClick = 0
+
+local function triggerCharFromHit(inst)
+    local node = inst
+    while node and node ~= workspace do
+        if node:IsA("Model") and node:FindFirstChildOfClass("Humanoid") then
+            return node
+        end
+        node = node.Parent
+    end
+    return nil
+end
+
+local function startTriggerbot()
+    if triggerThread and coroutine.status(triggerThread) ~= "dead" then return end
+    triggerThread = task.spawn(function()
+        while Config.triggerEnabled and not isTomb() do
+            pcall(function()
+                local char = LP.Character
+                local hum = char and char:FindFirstChildOfClass("Humanoid")
+                if not hum or hum.Health <= 0 then return end
+                if UIS:GetFocusedTextBox() then return end
+                local cam = Camera
+                if not cam then return end
+                local vs = cam.ViewportSize
+                local ray = cam:ViewportPointToRay(vs.X * 0.5, vs.Y * 0.5)
+                local params = RaycastParams.new()
+                params.FilterType = Enum.RaycastFilterType.Exclude
+                params.FilterDescendantsInstances = { char }
+                local hit = workspace:Raycast(ray.Origin, ray.Direction * 1000, params)
+                if not hit then return end
+                local targetChar = triggerCharFromHit(hit.Instance)
+                if not targetChar or targetChar == char then return end
+                local th = targetChar:FindFirstChildOfClass("Humanoid")
+                if not th or th.Health <= 0 then return end
+                local plr = Players:GetPlayerFromCharacter(targetChar)
+                if plr and isTeammate(plr) then return end
+                local delayS = (Config.triggerDelay or 0) / 1000
+                local now = tick()
+                if now - lastTriggerClick < math.max(delayS, 0.1) then return end
+                lastTriggerClick = now
+                if delayS > 0 then
+                    task.delay(delayS, function()
+                        if Config.triggerEnabled and not isTomb() then pcall(mouse1click) end
+                    end)
+                else
+                    pcall(mouse1click)
+                end
+            end)
+            task.wait(0.033)
+        end
+        triggerThread = nil
+    end)
+end
+
+local fpsThread = nil
+local savedFpsState = nil
+
+local function applyFpsBoost(on)
+    if on then
+        savedFpsState = {
+            tech = Lighting.Technology,
+            disabled = {},
+        }
+        pcall(function()
+            Lighting.Technology = Enum.Technology.Compatibility
+        end)
+        for _, c in ipairs(Lighting:GetChildren()) do
+            local ok, en = pcall(function()
+                return c.Enabled
+            end)
+            if ok and en == true then
+                local okSet = pcall(function()
+                    c.Enabled = false
+                end)
+                if okSet then
+                    table.insert(savedFpsState.disabled, c)
+                end
+            end
+        end
+    elseif savedFpsState then
+        pcall(function()
+            Lighting.Technology = savedFpsState.tech
+        end)
+        for _, c in ipairs(savedFpsState.disabled) do
+            pcall(function()
+                c.Enabled = true
+            end)
+        end
+        savedFpsState = nil
+    end
+end
+
+local function startFpsBoost()
+    if fpsThread and coroutine.status(fpsThread) ~= "dead" then return end
+    applyFpsBoost(true)
+    notify("FPS", "Booster on (shadows + effects off).")
+    fpsThread = task.spawn(function()
+        while Config.fpsBoost and not isTomb() do
+            task.wait(3)
+            if not Config.fpsBoost or isTomb() then break end
+            pcall(function()
+                Lighting.Technology = Enum.Technology.Compatibility
+            end)
+        end
+        fpsThread = nil
+    end)
+end
+
+local function stopFpsBoost()
+    if not savedFpsState then return end
+    applyFpsBoost(false)
+    notify("FPS", "Booster off.")
+end
+
+CombatSub:AddSection("Triggerbot")
+CombatSub:AddToggle({
+    Name = "Triggerbot",
+    Flag = "af_trigger_enabled",
+    Default = false,
+    Callback = function(v)
+        Config.triggerEnabled = v
+        if v then startTriggerbot() end
+    end,
+})
+CombatSub:AddSlider({
+    Name = "Trigger Delay",
+    Min = 0,
+    Max = 300,
+    Default = 60,
+    Suffix = " ms",
+    Flag = "af_trigger_delay",
+    Callback = function(v) Config.triggerDelay = v end,
+})
+CombatSub:AddLabel({ Text = "Fires when your crosshair is on an enemy" })
+
 local SettingsTab = Window:AddTab({ Name = "Settings", Icon = "settings", Subtitle = "Config" })
 local ConfigSub = SettingsTab:AddSubTab("Config")
 autosaveWrap(ConfigSub)
+
+ConfigSub:AddSection("Performance")
+ConfigSub:AddToggle({
+    Name = "FPS Boost",
+    Flag = "af_fps_boost",
+    Default = false,
+    Callback = function(v)
+        Config.fpsBoost = v
+        if v then startFpsBoost() else stopFpsBoost() end
+    end,
+})
 
 ConfigSub:AddSection("Config")
 local selectedConfig = ""
