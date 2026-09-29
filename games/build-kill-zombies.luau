@@ -453,10 +453,14 @@ local function trySkills()
     local queue = {}
     for _, s in pairs(byId) do
         if type(s) == "table" and type(s.Id) == "string" then
+            local id = s.Id
             local cost = tonumber(s.Cost) or 0
             local parent = type(s.Parent) == "string" and s.Parent or ""
-            if not owned[s.Id] and cost <= cash and (parent == "" or owned[parent]) then
-                queue[#queue + 1] = { id = s.Id, cost = cost }
+            -- skip the skill-tree layout nodes, they are not purchasable
+            local isNode = not (string.match(id, "_root$") or string.match(id, "_portal$")
+                or s.Title == "Back" or s.Title == "Start")
+            if isNode and not owned[id] and cost <= cash and (parent == "" or owned[parent]) then
+                queue[#queue + 1] = { id = id, cost = cost }
             end
         end
     end
@@ -470,7 +474,6 @@ local function trySkills()
     end
 end
 
-local function tryQuests()
 local function questConfig()
     local ok, cfg = pcall(function() return require(ReplicatedStorage.Shared.Data.QuestConfig) end)
     if not ok or not cfg then return nil end
