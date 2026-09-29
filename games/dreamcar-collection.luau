@@ -318,7 +318,6 @@ local Config = {
     unlimitedNitro = false,
     autoRebirth = false,
     autoQuest = false,
-    autoDaily = false,
     autoFreeReward = false,
     autoUpgrades = false,
     autoClean = false,
@@ -517,6 +516,8 @@ local function isTooCloseToPlaced(worldPos, placed, minDist)
 	return false
 end
 
+local PLOT_DECOR = { "Visual", "scripted", "Lights", "Spawn" }
+
 local function isObstructed(excludeRoot, worldPos)
     local params = OverlapParams.new()
     params.FilterType = Enum.RaycastFilterType.Exclude
@@ -525,14 +526,18 @@ local function isObstructed(excludeRoot, worldPos)
     if plot then
         local floor = plot:FindFirstChild("FloorTarget") or plot:FindFirstChild("FloorTarget", true)
         if floor then table.insert(exclude, floor) end
+        for _, n in ipairs(PLOT_DECOR) do
+            local d = plot:FindFirstChild(n)
+            if d then table.insert(exclude, d) end
+        end
     end
     params.FilterDescendantsInstances = exclude
     local box = CFrame.new(worldPos + Vector3.new(0, 1.5, 0))
     for _, part in ipairs(workspace:GetPartBoundsInBox(box, Vector3.new(4.5, 4, 4.5), params)) do
-        if part.CanCollide then
+        if part:FindFirstAncestor("PlacedLuckyBlocks") then
             return true
         end
-        if part:FindFirstAncestor("PlacedLuckyBlocks") then
+        if part.CanCollide then
             return true
         end
     end
@@ -1509,34 +1514,124 @@ local function tryRebirth()
     end
 end
 
--- ========== AUTO DAILY ==========
-local lastDailyClaim = 0
-
-local function tryClaimDaily()
-    if tick() - lastDailyClaim < 10 then return end
-    local net = getNet()
-    if not net then return end
-    for day = 1, 7 do
-        safeSend(function() net.PlayerData.ClaimDailyReward.send({day = day}) end)
-    end
-    lastDailyClaim = tick()
-end
-
 -- ========== AUTO FREE REWARD ==========
 local lastFreeReward = 0
+local freeRewardBusy = false
+local freeRewardCooldown = 10
+local PLAYTIME_MILESTONES = { 60, 180, 600, 1800, 3600, 7200, 10800, 14400, 21600 }
+local playedSlots = {}
+
+local function tryPlaytimeGifts()
+    local net = getNet()
+    if not net or not net.PlayerData then return end
+    local cfgOk, cfg = pcall(function()
+        return require(ReplicatedStorage.GAMEPLAY.Economy.PlaytimeRewardsConfig)
+    end)
+    if not cfgOk or not cfg then return end
+
+    local dayKey = cfg.DayKey(workspace:GetServerTimeNow())
+
+    if playedSlots._day ~= dayKey then
+        playedSlots = { _day = dayKey }
+    end
+
+    local res
+    local conn = net.PlayerData.PlaytimeRewardResult.listen(function(p) res = p end)
+
+    for slot = 1, #PLAYTIME_MILESTONES do
+        if rawget(_G, _G_TOMB) then break end
+        if playedSlots[dayKey .. ":" .. slot] then continue end
+
+        res = nil
+        safeSend(function()
+            net.PlayerData.ClaimPlaytimeReward.send({ dayKey = dayKey, slot = slot })
+        end)
+        local t = tick()
+        while tick() - t < 1.2 do
+            if rawget(_G, _G_TOMB) then break end
+            if res then break end
+            task.wait(0.05)
+        end
+
+        -- server drops some replies, retry once before giving up on this slot
+        if not res then
+            task.wait(0.3)
+            res = nil
+            safeSend(function()
+                net.PlayerData.ClaimPlaytimeReward.send({ dayKey = dayKey, slot = slot })
+            end)
+            local tr = tick()
+            while tick() - tr < 1.2 do
+                if rawget(_G, _G_TOMB) then break end
+                if res then break end
+                task.wait(0.05)
+            end
+        end
+
+        if res then
+            if res.success == true
+                or res.reason == "already_claimed"
+                or res.reason == "This reward has already been claimed." then
+                playedSlots[dayKey .. ":" .. slot] = true
+            elseif res.reason == "Keep playing to unlock this reward." then
+                -- not unlocked yet, stop early, earlier slots are already handled
+                break
+            end
+        end
+        task.wait(0.35)
+    end
+
+    pcall(function() conn:Disconnect() end)
+end
 
 local function tryFreeReward()
-    if tick() - lastFreeReward < 60 then return end
+    if not Config.autoFreeReward then return end
+    if freeRewardBusy then return end
+    if tick() - lastFreeReward < freeRewardCooldown then return end
     local net = getNet()
     if not net then return end
+
+    freeRewardBusy = true
     lastFreeReward = tick()
-    safeSend(function() net.FreeReward.LaunchRequest.send({source = "menu_closed"}) end)
-    task.delay(8, function()
-        local n = getNet()
-        if n then
-            safeSend(function() n.FreeReward.ClaimRequest.send({source = "menu_closed"}) end)
+
+    pcall(tryPlaytimeGifts)
+
+    pcall(function()
+        if not net.FreeReward then return end
+        local claimRes
+        local cClaim = net.FreeReward.ClaimResult.listen(function(p) claimRes = p end)
+
+        safeSend(function() net.FreeReward.ShopViewed.send() end)
+        task.wait(0.15)
+
+        for _, src in ipairs({ "robux_shop", "gem_shop" }) do
+            if rawget(_G, _G_TOMB) then break end
+            claimRes = nil
+            safeSend(function()
+                net.FreeReward.ClaimRequest.send({ source = src })
+            end)
+            local tc = tick()
+            while tick() - tc < 1.5 do
+                if rawget(_G, _G_TOMB) then break end
+                if claimRes then break end
+                task.wait(0.05)
+            end
+            if claimRes then
+                if claimRes.success == true
+                    or claimRes.reason == "claimed"
+                    or claimRes.reason == "already_claimed" then
+                    break
+                end
+                if claimRes.reason == "cooldown" then
+                    break
+                end
+            end
         end
+
+        pcall(function() cClaim:Disconnect() end)
     end)
+
+    freeRewardBusy = false
 end
 
 -- ========== AUTO UPGRADES ==========
@@ -1588,7 +1683,6 @@ task.spawn(function()
         end
 
         if Config.autoRebirth then pcall(tryRebirth) end
-        if Config.autoDaily then pcall(tryClaimDaily) end
         if Config.autoFreeReward then pcall(tryFreeReward) end
         if Config.autoUpgrades then pcall(tryUpgrades) end
 
@@ -1806,7 +1900,6 @@ RewardsSub:AddToggle({Name = "Auto Rebirth", Default = false, Callback = functio
 RewardsSub:AddToggle({Name = "Auto Claim Quests", Default = false, Callback = function(v)
     Config.autoQuest = v; if v then pcall(requestQuestSync); pcall(listenQuestSync) end
 end})
-RewardsSub:AddToggle({Name = "Auto Daily Reward", Default = false, Callback = function(v) Config.autoDaily = v end})
 RewardsSub:AddToggle({Name = "Auto Free Reward", Default = false, Callback = function(v) Config.autoFreeReward = v end})
 RewardsSub:AddToggle({Name = "Auto Buy Upgrades", Default = false, Callback = function(v) Config.autoUpgrades = v end})
 
