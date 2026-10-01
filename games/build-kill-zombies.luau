@@ -53,15 +53,247 @@ local function isTomb()
 end
 
 -- ================================================================
-local function onSignal(signal, fn)
-    if STATE and type(STATE.connect) == "function" then
-        STATE.connect(signal, fn)
-    else
-        signal:Connect(fn)
+-- KEY SYSTEM (Panda Auth) - same pattern as the other Exlumia Hub games
+-- ================================================================
+if not _G._hubKeyValidated then
+    local PUSL_SERVICE_ID = "exlumiaa"
+    local PUSL_LIB_URL = "https://secure.pandauth.com/pv4/lib"
+    local KEYSYSTEM_STORE_PATH = "ExlumiaHub/panda_key_bkz.txt"
+    local PUSL = nil
+
+    local function pxLoad()
+        if PUSL then return true end
+        local okGet, src = pcall(function() return game:HttpGet(PUSL_LIB_URL) end)
+        if not okGet or type(src) ~= "string" or #src == 0 then return false end
+        local chunk = loadstring(src)
+        if type(chunk) ~= "function" then return false end
+        local okCall, lib = pcall(chunk)
+        if not okCall or type(lib) ~= "table" or type(lib.configure) ~= "function" then return false end
+        PUSL = lib
+        local okCfg = pcall(function()
+            PUSL.configure({
+                serviceId = PUSL_SERVICE_ID,
+                debug = false,
+                kickOnDetect = false,
+            })
+        end)
+        if not okCfg then PUSL = nil; return false end
+        return true
+    end
+
+    local function ksReadStore()
+        if type(isfile) == "function" and isfile(KEYSYSTEM_STORE_PATH) then
+            local okData, data = pcall(readfile, KEYSYSTEM_STORE_PATH)
+            if okData and type(data) == "string" then
+                local key = string.gsub(string.sub(data, 1, 80), "%s+", "")
+                if #key > 0 then return key end
+            end
+        end
+        return nil
+    end
+
+    local function ksWriteStore(key)
+        if type(writefile) == "function" then
+            return pcall(writefile, KEYSYSTEM_STORE_PATH, tostring(key))
+        end
+        return false
+    end
+
+    local function ksValidate(key)
+        if not pxLoad() then return false, "Could not load Panda library (check internet)" end
+        for attempt = 1, 4 do
+            local okCall, ok, reason = pcall(function() return PUSL.validateEx(tostring(key)) end)
+            if not okCall then break end
+            if ok then return true, "" end
+            if reason == "INVALID_KEY" or reason == "NO_KEY" or reason == "NO_SERVICE" then
+                return false, "Invalid / expired / wrong device key"
+            end
+            task.wait(attempt * 1.5)
+        end
+        return false, "Network / server error"
+    end
+
+    local function ksGetKeyLink()
+        if not pxLoad() then return nil end
+        local ok, link = pcall(function() return PUSL.getKeyUrl() end)
+        if ok and type(link) == "string" and #link > 0 then return link end
+        return nil
+    end
+
+    local function ksShowGate(onSuccess)
+        local pg = LP:FindFirstChild("PlayerGui") or LP:WaitForChild("PlayerGui")
+        local old = pg:FindFirstChild("BuildKillZombiesKeyGate")
+        if old then old:Destroy() end
+
+        local sc = Instance.new("ScreenGui")
+        sc.Name = "BuildKillZombiesKeyGate"
+        sc.ResetOnSpawn = false
+        sc.IgnoreGuiInset = true
+        sc.DisplayOrder = 998
+        sc.Parent = pg
+
+        local accent = Color3.fromRGB(120, 96, 255)
+        local accent2 = Color3.fromRGB(180, 160, 255)
+
+        local overlay = Instance.new("Frame")
+        overlay.Size = UDim2.fromScale(1, 1)
+        overlay.BackgroundColor3 = Color3.fromRGB(9, 10, 15)
+        overlay.BackgroundTransparency = 0.1
+        overlay.BorderSizePixel = 0
+        overlay.Parent = sc
+
+        local card = Instance.new("Frame")
+        card.Name = "Card"
+        card.AnchorPoint = Vector2.new(0.5, 0.5)
+        card.Position = UDim2.fromScale(0.5, 0.5)
+        card.Size = UDim2.fromOffset(360, 330)
+        card.BackgroundColor3 = Color3.fromRGB(18, 19, 27)
+        card.BorderSizePixel = 0
+        card.Parent = sc
+        local cardc = Instance.new("UICorner"); cardc.CornerRadius = UDim.new(0, 16); cardc.Parent = card
+        local cardStroke = Instance.new("UIStroke"); cardStroke.Color = accent; cardStroke.Transparency = 0.6; cardStroke.Thickness = 1; cardStroke.Parent = card
+
+        local title = Instance.new("TextLabel")
+        title.Size = UDim2.new(1, 0, 0, 42)
+        title.Position = UDim2.fromOffset(0, 20)
+        title.BackgroundTransparency = 1
+        title.Text = "Build and Kill Zombies"
+        title.Font = Enum.Font.GothamBold
+        title.TextSize = 22
+        title.TextColor3 = Color3.fromRGB(240, 242, 250)
+        title.Parent = card
+        local titleGrad = Instance.new("UIGradient"); titleGrad.Rotation = -8; titleGrad.Color = ColorSequence.new(accent, Color3.fromRGB(220, 235, 255)); titleGrad.Parent = title
+
+        local subtitle = Instance.new("TextLabel")
+        subtitle.Size = UDim2.new(1, 0, 0, 16)
+        subtitle.Position = UDim2.fromOffset(0, 62)
+        subtitle.BackgroundTransparency = 1
+        subtitle.Text = "Enter your key to unlock"
+        subtitle.Font = Enum.Font.Gotham
+        subtitle.TextSize = 12
+        subtitle.TextColor3 = Color3.fromRGB(150, 155, 172)
+        subtitle.Parent = card
+
+        local status = Instance.new("TextLabel")
+        status.Size = UDim2.new(1, -32, 0, 40)
+        status.Position = UDim2.fromOffset(16, 78)
+        status.BackgroundTransparency = 1
+        status.Text = ""
+        status.Font = Enum.Font.Gotham
+        status.TextSize = 12
+        status.TextColor3 = accent2
+        status.TextWrapped = true
+        status.Parent = card
+
+        local keyBox = Instance.new("TextBox")
+        keyBox.Name = "KeyBox"
+        keyBox.Text = ""
+        keyBox.AnchorPoint = Vector2.new(0.5, 0.5)
+        keyBox.Position = UDim2.fromOffset(180, 152)
+        keyBox.Size = UDim2.new(0, 312, 0, 42)
+        keyBox.BackgroundColor3 = Color3.fromRGB(27, 29, 40)
+        keyBox.BorderSizePixel = 0
+        keyBox.Font = Enum.Font.GothamBold
+        keyBox.TextSize = 16
+        keyBox.TextColor3 = Color3.fromRGB(240, 242, 250)
+        keyBox.ClearTextOnFocus = false
+        keyBox.Parent = card
+        local keyBoxc = Instance.new("UICorner"); keyBoxc.CornerRadius = UDim.new(0, 10); keyBoxc.Parent = keyBox
+
+        local function makeButton(text, posX, color)
+            local btn = Instance.new("TextButton")
+            btn.AnchorPoint = Vector2.new(0.5, 0.5)
+            btn.Position = UDim2.fromOffset(posX, 220)
+            btn.Size = UDim2.new(0, 140, 0, 42)
+            btn.BackgroundColor3 = color
+            btn.BorderSizePixel = 0
+            btn.Font = Enum.Font.GothamBold
+            btn.Text = text
+            btn.TextSize = 14
+            btn.TextColor3 = Color3.fromRGB(255, 255, 255)
+            btn.Parent = card
+            local btnc = Instance.new("UICorner"); btnc.CornerRadius = UDim.new(0, 10); btnc.Parent = btn
+            return btn
+        end
+
+        local getBtn = makeButton("Get Key", 90, accent)
+        getBtn.Name = "GetKeyBtn"
+        local verifyBtn = makeButton("Verify", 270, Color3.fromRGB(52, 58, 82))
+        verifyBtn.Name = "VerifyBtn"
+
+        local hint = Instance.new("TextLabel")
+        hint.Size = UDim2.new(1, -32, 0, 30)
+        hint.Position = UDim2.fromOffset(16, 268)
+        hint.BackgroundTransparency = 1
+        hint.Text = "Open the link, complete the ad, then paste your key."
+        hint.Font = Enum.Font.Gotham
+        hint.TextSize = 11
+        hint.TextColor3 = Color3.fromRGB(120, 124, 140)
+        hint.TextWrapped = true
+        hint.Parent = card
+
+        local done = false
+        getBtn.MouseButton1Click:Connect(function()
+            local link = ksGetKeyLink()
+            if link then
+                pcall(setclipboard, link)
+                status.Text = "Get key link copied to clipboard."
+            else
+                status.Text = "Could not fetch get-key link."
+            end
+        end)
+        verifyBtn.MouseButton1Click:Connect(function()
+            if done then return end
+            local key = string.gsub(keyBox.Text, "%s+", "")
+            if key == "" then status.Text = "Enter your key first." return end
+            status.Text = "Verifying..."
+            task.spawn(function()
+                local okVal, msg = ksValidate(key)
+                if done then return end
+                if okVal then
+                    ksWriteStore(key)
+                    _G._hubKeyValidated = true
+                    status.Text = "Key verified."
+                    done = true
+                    task.wait(0.35)
+                    sc:Destroy()
+                    onSuccess()
+                else
+                    status.Text = "Failed: " .. msg
+                end
+            end)
+        end)
+
+        return sc
+    end
+
+    do
+        local storeKey = ksReadStore()
+        local unlocked = false
+        if storeKey then
+            local okVal = ksValidate(storeKey)
+            if okVal then
+                unlocked = true
+                _G._hubKeyValidated = true
+            end
+        end
+        if not unlocked then
+            local gateDone = false
+            local gui = ksShowGate(function() gateDone = true end)
+
+            while not gateDone do
+                if rawget(_G, _G_TOMB) then
+                    pcall(function() gui:Destroy() end)
+                    return
+                end
+                task.wait(0.1)
+            end
+            if gui and gui.Parent then
+                pcall(function() gui:Destroy() end)
+            end
+        end
     end
 end
-
--- ================================================================
 
 -- ================================================================
 -- CONFIG
@@ -69,7 +301,6 @@ end
 local Config = {
     speedBoost = false,
     speedValue = 4,
-    noFuel = false,
     autoDrive = false,
     autoDriveSpeed = 100,
     teleportToCar = false,
@@ -86,6 +317,14 @@ local Config = {
     espMaxDist = 400,
     autoSkill = false,
     autoQuest = false,
+    autoRoll = false,
+    autoRollStation = "Blocks",
+    autoRollSkip = true,
+    autoBuyRoll = false,
+    maxBuyPrice = 5000,
+    rollCategories = "",
+    autoCodes = false,
+    autoChest = false,
     autoBoss = false,
 }
 
@@ -117,10 +356,152 @@ end
 local function runAxisOf(car)
     if not car then return Vector3.new(1, 0, 0) end
     local ax = car:GetAttribute("RunAxis")
-    if type(ax) == "Vector3" and ax.Magnitude > 0 then
+    -- typeof, not type(): Luau's type() reports native vectors as "vector", so
+    -- comparing against "Vector3" here was always false and the attribute was
+    -- never used.
+    if typeof(ax) == "Vector3" and ax.Magnitude > 0 then
         return ax.Unit
     end
     return Vector3.new(1, 0, 0)
+end
+
+-- Aiming at a zombie picks up its height as well as its bearing, and a
+-- vertical velocity drives the car into the floor and stops it dead. Driving
+-- is always done flat on the ground, so drop Y from every direction used.
+local function flatXZ(v)
+    return Vector3.new(v.X, 0, v.Z)
+end
+
+-- The car is not ours to push around. ReplicatedStorage.Controllers.CarController
+-- owns it: on PreSimulation it raycasts all four wheels and applies suspension,
+-- drive and grip forces, and it takes throttle/steer from GetThrottleSteer(),
+-- which is nothing but UserInputService:IsKeyDown(W / S / A / D).
+--
+-- Writing Chassis.AssemblyLinearVelocity by hand fought that controller every
+-- frame. The car was flung clear of the ground, and
+-- ReplicatedStorage.Shared.Data.RunValidationConfig is what noticed:
+-- GroundClearance = 9, AirGrace = 2.5, StrikesToEndRun = 3 inside a 30s
+-- window. Three strikes and the run is killed with
+-- "Your vehicle was returned after repeated invalid movement."
+--
+-- So drive it the way a player does: hold the throttle, steer with A/D, and
+-- leave the physics to the controller.
+--
+-- Holding real keys with keypress() fixed that, but only on a focused PC
+-- window: a phone has no keyboard to press, and GetThrottleSteer reads
+-- IsKeyDown unconditionally on every platform. So answer the read instead
+-- of the keyboard. STATE.namecallHook answers IsKeyDown for the three keys
+-- the drive loop is "holding", which is exactly the value GetThrottleSteer
+-- would see if a thumb were on a real key. Nothing is pressed, so nothing
+-- needs focus, and a mobile player gets the same drive as a desktop one.
+local KEY_W, KEY_A, KEY_D = Enum.KeyCode.W, Enum.KeyCode.A, Enum.KeyCode.D
+
+local driveKeys = {
+    [KEY_W] = false,
+    [KEY_A] = false,
+    [KEY_D] = false,
+}
+
+-- True when the game is answered by the hook rather than by native input.
+-- Without STATE (a bare execute instead of a live-reload) the hook cannot
+-- be installed, so setDriveKey falls back to keypress() and the status line
+-- keeps the old focus requirement instead of pretending.
+local driveHooked = false
+
+if STATE and type(STATE.namecallHook) == "function" then
+    pcall(function()
+        STATE.namecallHook("IsKeyDown", function(self, method, ...)
+            local kc = ...
+            if kc and driveKeys[kc] then return true end
+            -- no substitution: let the real answer through, so a player who
+            -- is genuinely holding a key still gets it
+        end)
+        driveHooked = true
+    end)
+end
+
+-- keypress takes a virtual-key number, not an Enum.KeyCode: passing
+-- Enum.KeyCode.W raises "number expected, got EnumItem". Enum values are
+-- lowercase ascii (W = 119) while the VK codes are uppercase (W = 87).
+local VK = {
+    [KEY_W] = 87,
+    [KEY_A] = 65,
+    [KEY_D] = 68,
+}
+
+local function setDriveKey(kc, want)
+    if driveKeys[kc] == want then return end
+    driveKeys[kc] = want
+    if driveHooked then return end
+    pcall(function()
+        local vk = VK[kc]
+        if not vk then return end
+        if want then keypress(vk) else keyrelease(vk) end
+    end)
+end
+
+local function releaseDriveKeys()
+    for kc, held in pairs(driveKeys) do
+        if held then
+            driveKeys[kc] = false
+            if not driveHooked then
+                pcall(function()
+                    local vk = VK[kc]
+                    if vk then keyrelease(vk) end
+                end)
+            end
+        end
+    end
+end
+
+-- Returns false with a reason when driving is impossible right now, so the
+-- status label can say why instead of claiming "driving" while nothing moves.
+local function applyDriveInput(car, chassis, dir, speed)
+    if not driveHooked and not isrbxactive() then
+        releaseDriveKeys()
+        return false, "Roblox window is not focused"
+    end
+    local char = LP.Character
+    local hum = char and char:FindFirstChildOfClass("Humanoid")
+    local seat = car:FindFirstChild("DriverSeat")
+    if not hum or not seat or hum.SeatPart ~= seat then
+        releaseDriveKeys()
+        return false, "not sitting in the driver seat"
+    end
+
+    local vel = chassis.AssemblyLinearVelocity
+    local cur = Vector3.new(vel.X, 0, vel.Z).Magnitude
+    -- Pulse the throttle instead of pinning it: holding W all the time would
+    -- ignore the Drive Speed slider and just run the car at TopSpeed.
+    setDriveKey(KEY_W, cur < speed - 4)
+
+    local want = flatXZ(dir)
+    if want.Magnitude < 0.02 then
+        setDriveKey(KEY_A, false)
+        setDriveKey(KEY_D, false)
+        return true
+    end
+    local look = flatXZ(chassis.CFrame.LookVector)
+    if look.Magnitude < 0.02 then
+        setDriveKey(KEY_A, false)
+        setDriveKey(KEY_D, false)
+        return true
+    end
+    local l, w = look.Unit, want.Unit
+    -- negative cross means the target lies to the left of the nose
+    local cross = l.X * w.Z - l.Z * w.X
+    local dot = l:Dot(w)
+    local steer = 0
+    if dot < -0.5 then
+        steer = if cross < 0 then -1 else 1
+    elseif cross < -0.16 then
+        steer = -1
+    elseif cross > 0.16 then
+        steer = 1
+    end
+    setDriveKey(KEY_A, steer == -1)
+    setDriveKey(KEY_D, steer == 1)
+    return true
 end
 
 local function spawnCar()
@@ -145,9 +526,12 @@ end
 -- ================================================================
 local baseAttrs = nil
 
--- TopSpeed, Accel and Turn are recomputed by the server from the placed parts,
--- so writing them is pointless. DragFactor is NOT recomputed and is the real
--- speed cap multiplier (cap = TopSpeed * DragFactor * MiniEventsConfig.SpeedMult).
+-- TopSpeed, Accel and Turn get recomputed by the server from the placed parts,
+-- so writing them does nothing lasting. The knobs that DO stick, measured on a
+-- live car, are EnginePower and TurboMult: setting each to 500 held for the
+-- full wait. DragFactor, which an earlier note claimed was the multiplier, is
+-- not an attribute of this car at all - setting it is stripped straight back to
+-- nil, which is why the old Speed Boost did nothing.
 local function applyCarStats()
     local car = myCar()
     if not car then
@@ -155,21 +539,19 @@ local function applyCarStats()
         return
     end
     if not baseAttrs then
-        baseAttrs = { DragFactor = car:GetAttribute("DragFactor") }
+        baseAttrs = {
+            EnginePower = tonumber(car:GetAttribute("EnginePower")) or 13,
+            TurboMult = tonumber(car:GetAttribute("TurboMult")) or 1,
+        }
     end
 
     if Config.speedBoost then
-        car:SetAttribute("DragFactor", Config.speedValue)
-    elseif baseAttrs.DragFactor ~= nil then
-        car:SetAttribute("DragFactor", baseAttrs.DragFactor)
+        local mult = math.clamp(tonumber(Config.speedValue) or 1, 1, 6)
+        car:SetAttribute("TurboMult", mult)
+        car:SetAttribute("EnginePower", baseAttrs.EnginePower * mult)
     else
-        car:SetAttribute("DragFactor", nil)
-    end
-
-    if Config.noFuel then
-        car:SetAttribute("Fuel", 15)
-        car:SetAttribute("NitroFuel", 1)
-        car:SetAttribute("FuelFrozen", false)
+        car:SetAttribute("TurboMult", baseAttrs.TurboMult)
+        car:SetAttribute("EnginePower", baseAttrs.EnginePower)
     end
 
     if Config.damageBoost then
@@ -179,6 +561,158 @@ local function applyCarStats()
     if Config.healthBoost then
         car:SetAttribute("TotalHealthExtra", Config.healthValue)
     end
+end
+
+-- ================================================================
+-- AUTO ROLL
+-- Rolling is not a packet we send: the server picks the result and only fires
+-- RollSpin after a roll station is physically used. So we walk the character
+-- to the station on our own plot and press its "Roll!" ProximityPrompt, then
+-- wait out RollConfig.SpinDuration (2.5s / RollSpeed) before the next one.
+-- ================================================================
+local rollRunning = false
+local rollStop = false
+local rollStationApi = nil
+local rollCategoryApi = nil
+local freeStuffRunning = false
+local lastInventoryGain = nil
+local lastBuyResult = nil
+-- shared state, declared up here because buyRolledItem() further down runs
+-- before the codes section that also touches these
+local inventoryCount = 0
+local inventoryKinds = 0
+local codeMessages = {}
+local redeemedCodes = {}
+-- startAutoRoll() is defined before the money helpers, so it needs these bound
+-- as forward declarations first - as plain locals it would resolve to a global
+-- that does not exist yet and blow up at call time.
+local buyRolledItem
+
+-- "⭐ Distance" / "Distance" on the leaderstats, as a plain number
+local function cashDistance()
+    local ls = LP:FindFirstChild("leaderstats")
+    if not ls then return 0 end
+    local d = ls:FindFirstChild("⭐ Distance") or ls:FindFirstChild("Distance")
+    return d and (tonumber(d.Value) or 0) or 0
+end
+
+local function myPlot()
+    local plots = workspace:FindFirstChild("Game")
+        and workspace.Game:FindFirstChild("Lobby")
+        and workspace.Game.Lobby:FindFirstChild("Plots")
+    if not plots then return nil end
+    for _, plot in ipairs(plots:GetChildren()) do
+        if plot:GetAttribute("OwnerUserId") == LP.UserId then return plot end
+    end
+    return nil
+end
+
+local function rollStations()
+    local plot = myPlot()
+    if not plot then return nil, "your plot is not loaded yet" end
+    local rolls = plot:FindFirstChild("Rolls")
+    if not rolls then return nil, "this plot has no roll stations" end
+
+    -- Oxidelib's dropdown has no Callback, so read the live value from its api.
+    local want = "Blocks"
+    if rollStationApi and type(rollStationApi.Get) == "function" then
+        local v = rollStationApi:Get()
+        if type(v) == "string" then want = v end
+    end
+
+    local out = {}
+    local function add(name)
+        local part = rolls[name] and rolls[name]:FindFirstChild("Roll")
+        local prompt = part and part:FindFirstChildOfClass("ProximityPrompt")
+        if prompt then out[#out+1] = prompt end
+    end
+    if want == "Both" or want == "Blocks" then add("RollBlocks") end
+    if want == "Both" or want == "Weapons" then add("RollWeapons") end
+    return out, nil
+end
+
+local function startAutoRoll()
+    if rollRunning then return end
+    rollRunning = true
+    rollStop = false
+
+    task.spawn(function()
+        local interval = 3
+        pcall(function()
+            local RC = require(ReplicatedStorage.Shared.Data.RollConfig)
+            interval = (RC.SpinDuration or 2.5) + 0.5
+        end)
+
+        -- rollStop is a plain local, not Config and not STATE: STATE only exists
+        -- when the script is launched through the MCP live-reload, so relying on
+        -- it left the loop running after the toggle was switched off whenever the
+        -- script was executed by hand. isTomb() is the reload guard, because it
+        -- reads a counter in _G and works no matter how the script was started.
+        local savedCFrame = nil
+        while not rollStop and not isTomb() do
+            local prompts = rollStations()
+
+            if prompts and #prompts > 0 then
+                for _, prompt in ipairs(prompts) do
+                    if rollStop or isTomb() then break end
+                    if prompt and prompt.Parent then
+                        local hrp = LP.Character and LP.Character:FindFirstChild("HumanoidRootPart")
+                        if hrp then
+                            if not savedCFrame then savedCFrame = hrp.CFrame end
+                            -- Move once, let it settle, press once. Both parts
+                            -- matter: re-writing the CFrame on consecutive frames
+                            -- is what made the server ignore the prompt, and
+                            -- firing several times in a row floods it - a single
+                            -- press is what actually returns a 14 item roll.
+                            hrp.CFrame = prompt.Parent.CFrame * CFrame.new(0, 1.5, 2.5)
+                            task.wait(0.8)
+                            if not rollStop and not isTomb() and hrp.Parent then
+                                pcall(fireproximityprompt, prompt)
+                            end
+
+                            -- A roll only changes the item on show, so buy it
+                            -- straight away or the roll gave us nothing.
+                            if Config.autoBuyRoll and not rollStop then
+                                local plot = myPlot()
+                                local rolls = plot and plot:FindFirstChild("Rolls")
+                                if rolls then
+                                local bought, why
+                                for _, name in ipairs({ "RollBlocks", "RollWeapons" }) do
+                                    local st = rolls:FindFirstChild(name)
+                                    local okBuy, r1, r2 = pcall(function()
+                                        return buyRolledItem(st, hrp)
+                                    end)
+                                    if not okBuy then
+                                        bought = bought or false
+                                        why = why or (name .. " error: " .. tostring(r1))
+                                    elseif r1 then
+                                        bought = true
+                                        why = name .. " bought"
+                                        break
+                                    elseif r2 and r2 ~= "nothing to buy yet"
+                                        and r2 ~= "no buy prompt" then
+                                        why = why or (name .. ": " .. tostring(r2))
+                                    end
+                                end
+                                lastBuyResult = why or "nothing to buy yet"
+                                end
+                            end
+                        end
+                    end
+                    task.wait(interval)
+                end
+            else
+                task.wait(0.5)
+            end
+        end
+
+        -- hand the character back where it was when auto roll was switched off
+        local hrp = LP.Character and LP.Character:FindFirstChild("HumanoidRootPart")
+        if hrp and savedCFrame then
+            pcall(function() hrp.CFrame = savedCFrame end)
+        end
+        rollRunning = false
+    end)
 end
 
 -- ================================================================
@@ -246,15 +780,27 @@ end
 -- AUTO DRIVE
 -- ================================================================
 local autoDriveConn = nil
+local driveActive = false
+-- declared above stopAutoDrive on purpose: a local named later in the chunk
+-- would not be in scope inside the function body and would silently become a
+-- global, leaving the status label reading the wrong variable.
+local driveStatus = "off"
+local spawnWait = 0
 
 local function stopAutoDrive()
     if autoDriveConn then
         pcall(function() autoDriveConn:Disconnect() end)
         autoDriveConn = nil
     end
+    -- syncAutoDrive only starts the loop when driveActive is false, so leaving
+    -- this flag set meant Auto Drive could run once and then never restart
+    -- after being switched off and on again.
+    driveActive = false
+    driveStatus = "off"
+    -- let go of the throttle, or the character keeps walking after Auto Drive
+    -- is switched off
+    releaseDriveKeys()
 end
-
-local driveActive = false
 
 local function driveWanted()
     return Config.autoDrive or Config.autoCrush or Config.fuelCollect
@@ -263,6 +809,29 @@ end
 local function startAutoDrive()
     stopAutoDrive()
     driveActive = true
+
+    -- Put the car out ourselves instead of waiting for the game to do it, which
+    -- left Auto Drive doing nothing for several seconds after being switched on.
+    driveStatus = "starting"
+    if not myCar() then
+        task.spawn(function()
+            for attempt = 1, 6 do
+                if not driveWanted() then driveStatus = "stopped" return end
+                if myCar() then driveStatus = "car ready" return end
+                if not Packets then
+                    driveStatus = "packets missing"
+                    return
+                end
+                driveStatus = ("spawn attempt %d"):format(attempt)
+                pcall(function() Packets.SpawnCar:Fire() end)
+                task.wait(1)
+            end
+            driveStatus = myCar() and "car ready" or "spawn failed"
+        end)
+    else
+        driveStatus = "car already out"
+    end
+
     autoDriveConn = RunService.Heartbeat:Connect(function()
         if isTomb() then
             stopAutoDrive()
@@ -273,40 +842,63 @@ local function startAutoDrive()
             return
         end
         local car = myCar()
+
+        -- The car disappears at the end of a run, so the spawn loop above exits
+        -- as soon as one exists and then never notices. Keep checking instead:
+        -- when auto drive is wanted and there is no car, put it back out.
+        if not car then
+            -- never leave W held with no car: the character would walk on foot
+            releaseDriveKeys()
+            spawnWait = (spawnWait or 0) - 1
+            if spawnWait <= 0 then
+                spawnWait = 90
+                driveStatus = "car gone, putting it back out"
+                if Packets then pcall(function() Packets.SpawnCar:Fire() end) end
+            end
+            return
+        end
+        spawnWait = 0
+
         local chassis = carChassis(car)
-        if not chassis then return end
+        if not chassis then
+            releaseDriveKeys()
+            return
+        end
         local pos = chassis.Position
         local speed = Config.autoDriveSpeed
 
-        -- the server clamps velocity to TopSpeed * DragFactor, so lift the
-        -- cap while driving or the car gets stopped dead every frame
-        local topSpeed = tonumber(car:GetAttribute("TopSpeed")) or 24
-        local needed = speed / math.max(1, topSpeed)
-        if (tonumber(car:GetAttribute("DragFactor")) or 0) < needed then
-            car:SetAttribute("DragFactor", needed + 1)
-        end
-
         -- fuel pickups only exist during a boss fight, so they win over everything
+        local dir = nil
         if Config.fuelCollect then
             local _, fuelPos = nearestFuel(pos, 800)
-            if fuelPos then
-                local dir = (fuelPos - pos)
-                if dir.Magnitude > 0.01 then
-                    chassis.AssemblyLinearVelocity = dir.Unit * speed
+            if fuelPos then dir = fuelPos - pos end
+        end
+
+        if dir == nil and Config.autoCrush then
+            -- nearestZombie returns the model and the distance, so take the part
+            local zModel, zDist = nearestZombie(pos, 200)
+            if zModel and zDist then
+                local zRoot = zModel:FindFirstChild("HumanoidRootPart")
+                local aim = zRoot and zRoot.Position or nil
+                if aim then
+                    -- actually steer at the zombie: blend the run axis with the
+                    -- direction to it, otherwise this branch was identical to the
+                    -- default and "Auto Crush" did nothing at all.
+                    local flatAxis = flatXZ(runAxisOf(car))
+                    local toZombie = flatXZ(aim - pos)
+                    dir = flatAxis * 0.35
+                    if toZombie.Magnitude > 0.01 then
+                        dir = dir + toZombie.Unit * 0.65
+                    end
+                    if dir.Magnitude <= 0.01 then dir = flatAxis end
                 end
-                return
             end
         end
 
-        if Config.autoCrush then
-            local _, zDist = nearestZombie(pos, 200)
-            if zDist then
-                chassis.AssemblyLinearVelocity = runAxisOf(car) * speed
-                return
-            end
-        end
+        if dir == nil then dir = runAxisOf(car) end
 
-        chassis.AssemblyLinearVelocity = runAxisOf(car) * speed
+        local ok, why = applyDriveInput(car, chassis, dir, speed)
+        driveStatus = ok and "driving" or (why or "driving")
     end)
 end
 
@@ -324,8 +916,12 @@ end
 local espObjects = {}
 
 local function clearESP()
-    for k, v in pairs(espObjects) do
-        pcall(function() v.Parent = nil end)
+    for _, v in pairs(espObjects) do
+        -- espObjects values are tables of two instances, not instances, so
+        -- setting .Parent on one did nothing: turning the ESP off left every
+        -- highlight and billboard on screen forever
+        pcall(function() if v.bb then v.bb:Destroy() end end)
+        pcall(function() if v.hl then v.hl:Destroy() end end)
     end
     espObjects = {}
 end
@@ -429,15 +1025,97 @@ local function ownedSet()
     return set
 end
 
+-- the game stores leaderstats as StringValues like "22.5K" / "1.2M", so a plain
+-- tonumber() always fails and every affordability check sees zero
+local function parseAmount(value)
+    if type(value) == "number" then return value end
+    if type(value) ~= "string" then return 0 end
+    local n = tonumber(value)
+    if n then return n end
+    -- prices in this game are shown as "$4k" / "R$ 250", so drop the currency
+    -- prefix before matching the number
+    local cleaned = value:gsub("[^%d%.KkMmBbTt]", "")
+    local num, suffix = string.match(cleaned, "^%s*([%d%.]+)%s*([KkMmBbTt]?)")
+    if not num then return 0 end
+    n = tonumber(num) or 0
+    local mult = ({ K = 1e3, M = 1e6, B = 1e9, T = 1e12 })[suffix:upper()]
+    return n * (mult or 1)
+end
+
+local function compactNumber(n)
+    n = tonumber(n) or 0
+    if n >= 1e9 then return ("%.1fB"):format(n / 1e9) end
+    if n >= 1e6 then return ("%.1fM"):format(n / 1e6) end
+    if n >= 1e3 then return ("%.1fK"):format(n / 1e3) end
+    return tostring(math.floor(n))
+end
+
 local function cashValue()
     local ls = LP:FindFirstChild("leaderstats")
     if not ls then return 0 end
     local cv = ls:FindFirstChild("💵 Cash") or ls:FindFirstChild("Cash")
-    return tonumber(cv and cv.Value) or 0
+    return parseAmount(cv and cv.Value)
 end
 
-local function trySkills()
-    local P = getPackets()
+-- Rolling only DISPLAYS an item at the station - it does not hand it over.
+-- The station's ItemPlace carries a separate "Buy" prompt (hold 0.9s) and that
+-- is the step that actually puts the part in your inventory. Measured: 5 rolls
+-- gave 0 items, but buying straight after a roll gave the item every time.
+local function stationBuyPrompt(station)
+    local place = station and station:FindFirstChild("ItemPlace")
+    return place and place:FindFirstChildWhichIsA("ProximityPrompt", true) or nil
+end
+
+-- The prompt hangs off an Attachment (ItemPlace.Attachment.BuyPrompt), and an
+-- Attachment has no CFrame, so walk up to the BasePart before moving anyone.
+local function partUnder(node)
+    local cur = node
+    while cur and not cur:IsA("BasePart") do cur = cur.Parent end
+    return cur
+end
+
+local function stationPrice(station)
+    local info = station and station:FindFirstChild("Info")
+    local label = info and info:FindFirstChild("Price")
+    local text = label and label:FindFirstChild("Text")
+    if not text then return nil end
+    local raw = ""
+    pcall(function() raw = text.Text or "" end)
+    return parseAmount(raw)
+end
+
+buyRolledItem = function(station, hrp)
+    local buy = stationBuyPrompt(station)
+    if not buy or not buy.Parent then return false, "no buy prompt" end
+    if not buy.Enabled then return false, "nothing to buy yet" end
+    if not hrp then return false, "no character" end
+
+    local price = stationPrice(station)
+    local have = cashValue()
+    if price and price > have then
+        return false, ("need %s, have %s"):format(
+            compactNumber(price), compactNumber(have))
+    end
+    if Config.maxBuyPrice > 0 and price and price > Config.maxBuyPrice then
+        return false, "costs " .. compactNumber(price) .. ", over your limit"
+    end
+
+    local anchor = partUnder(buy)
+    if not anchor then return false, "no part under the prompt" end
+
+    local saved = hrp.CFrame
+    pcall(function()
+        hrp.CFrame = anchor.CFrame * CFrame.new(0, 1.5, 2.5)
+    end)
+    task.wait(0.8)
+    local before = inventoryCount
+    pcall(fireproximityprompt, buy)
+    task.wait(1.2)
+    pcall(function() hrp.CFrame = saved end)
+    return inventoryCount > before, nil
+end
+
+local function trySkills()    local P = getPackets()
     if not P then return end
     if tick() - lastSkillSync > 20 then
         lastSkillSync = tick()
@@ -498,13 +1176,19 @@ local function tryQuests()
     for _, v in pairs(data.Claimed or {}) do claimed[tostring(v)] = true end
     local progress = data.Progress or {}
 
-    -- QuestConfig Stat names map to lowercase keys in the progress payload
+    -- Progress is keyed by the quest Id, not by Stat. The game's own
+    -- EventTotem reads Progress[q.Id] (ReplicatedStorage.Controllers.
+    -- ClientSetupService.Misc.EventTotem), and the two differ for the zombie
+    -- quest: its Id is "zombies" while its Stat is "ZombieKills". Keying off
+    -- Stat made that quest read 0 forever and never claim.
     for _, q in ipairs(quests) do
         if type(q) == "table" and type(q.Id) == "string" and not claimed[q.Id] then
-            local stat = string.lower(tostring(q.Stat or ""))
-            local have = tonumber(progress[stat]) or 0
-            local goal = tonumber(q.Goal) or math.huge
-            if have >= goal then
+            local have = tonumber(progress[string.lower(q.Id)])
+                or tonumber(progress[q.Id])
+                or tonumber(progress[string.lower(tostring(q.Stat or ""))])
+                or 0
+            local goal = tonumber(q.Goal)
+            if goal and have >= goal then
                 pcall(function() P.ClaimQuest:Fire(q.Id) end)
                 claimed[q.Id] = true
                 task.wait(0.4)
@@ -512,6 +1196,193 @@ local function tryQuests()
         end
     end
 end
+
+-- ================================================================
+-- FREE STUFF: codes, chest, roll skip, roll categories
+-- ================================================================
+
+-- The game ships its own list of live codes in Shared.Data.CodesConfig, so
+-- there is nothing to hardcode: read them, keep the ones still Active, and
+-- hand them to the server one at a time.
+local function activeCodes()
+    local ok, CC = pcall(function()
+        return require(ReplicatedStorage.Shared.Data.CodesConfig)
+    end)
+    if not ok or type(CC) ~= "table" then return {}, "could not read the code list" end
+    local list = {}
+    for name, def in pairs(CC) do
+        if type(def) == "table" and def.Active == true then
+            local need = tonumber(def.MinDistance)
+            if not need or (cashDistance() >= need) then
+                list[#list+1] = { code = tostring(name), need = need }
+            end
+        end
+    end
+    table.sort(list, function(a, b) return a.code < b.code end)
+    return list, nil
+end
+
+
+-- The server never answers on the RedeemCode response channel, so success is
+-- judged from what actually changes: cash, and the InventoryChanged packet
+-- the server fires for every item you are handed.
+
+local function redeemCodes(manual)
+    local P = getPackets()
+    if not P then return 0, "packets are not loaded" end
+    local list, err = activeCodes()
+    if not list or #list == 0 then
+        if manual then notify("Codes", err or "No live codes right now", "info") end
+        return 0, err or "no live codes right now"
+    end
+
+    local before = inventoryCount
+    local sent = 0
+    for _, entry in ipairs(list) do
+        if isTomb() then break end
+        if not redeemedCodes[entry.code] then
+            redeemedCodes[entry.code] = true
+            pcall(function()
+                P.RedeemCode:Response(function() end)
+            end)
+            pcall(function() P.RedeemCode:Fire(entry.code) end)
+            sent = sent + 1
+            task.wait(manual and 1.2 or 0.6)
+        end
+    end
+
+    if manual then
+        local extra = ""
+        local recent = {}
+        for i = #codeMessages, math.max(1, #codeMessages - 2), -1 do
+            recent[#recent + 1] = codeMessages[i]
+        end
+        if #recent > 0 then extra = "  " .. table.concat(recent, " / ") end
+        if inventoryCount > before then
+            notify("Codes", ("Sent %d codes, got %d items%s"):format(sent, inventoryCount - before, extra), "success")
+        else
+            notify("Codes", ("Sent %d codes, none left to claim"):format(sent), "warning")
+        end
+    end
+    return sent, inventoryCount - before
+end
+
+local function claimChest(manual)
+    local P = getPackets()
+    if not P then return false end
+    local ok, err = pcall(function() P.ClaimChestReward:Fire() end)
+    if manual then
+        notify("Chest", ok and "Claimed" or ("Failed: " .. tostring(err)), ok and "success" or "error")
+    end
+    return ok
+end
+
+local function applyRollCategories()
+    local P = getPackets()
+    if not P then return end
+    local list = rollCategoryApi and type(rollCategoryApi.Get) == "function"
+        and rollCategoryApi:Get() or nil
+    if type(list) ~= "table" then
+        if type(list) == "string" then
+            local out = {}
+            for name in string.gmatch(list, "[^,]+") do out[#out+1] = name end
+            list = out
+        else
+            list = { "Block", "Engine", "Fuel", "Wheel" }
+        end
+    end
+    if #list == 0 then return end
+    table.sort(list)
+    pcall(function() P.SetRollCategories:Fire(table.concat(list, ",")) end)
+end
+
+local function startFreeStuff()
+    if freeStuffRunning then return end
+    freeStuffRunning = true
+    task.spawn(function()
+        local chestTried = false
+        while (Config.autoCodes or Config.autoChest) and not isTomb() do
+            if Config.autoCodes then pcall(redeemCodes, false) end
+            if Config.autoChest and not chestTried then
+                chestTried = claimChest(false)
+            end
+            task.wait(60)
+        end
+        freeStuffRunning = false
+    end)
+end
+
+-- ================================================================
+-- LIVE EVENT
+-- The Build tab (slot save/load/buy, My Parts) was removed, so the slot
+-- bookkeeping went with it. The live event state stays: the Home tab still
+-- shows it.
+-- ================================================================
+local liveEvent = { name = "No event running", state = "idle" }
+
+local function wireLiveEvent()
+    local P = getPackets()
+    if not P then return end
+    pcall(function() P.LiveEventRequestActive:Fire() end)
+    local function showEvent(t)
+        if type(t) ~= "table" then
+            liveEvent.name = tostring(t or "No event running")
+            liveEvent.state = "active"
+            return
+        end
+        local name = t.Name or t.Definition or t.Id or t.Event
+        liveEvent.name = name and tostring(name) or "Event running"
+        liveEvent.state = tostring(t.State or t.Phase or "active")
+    end
+    pcall(function()
+        P.LiveEventActive.OnClientEvent:Connect(function(t)
+            if type(t) == "table" and next(t) == nil then
+                liveEvent.name = "No event running"
+                liveEvent.state = "idle"
+            else
+                showEvent(t)
+            end
+        end)
+    end)
+    pcall(function()
+        P.LiveEventStateChanged.OnClientEvent:Connect(function(a, b, c)
+            if type(a) == "table" then showEvent(a) end
+            if b ~= nil then liveEvent.state = tostring(b) end
+            if c ~= nil and type(c) == "string" and c ~= "" then liveEvent.name = c end
+        end)
+    end)
+    pcall(function()
+        P.LiveEventStarted.OnClientEvent:Connect(function(a, b)
+            if type(a) == "string" and a ~= "" then liveEvent.name = a end
+            liveEvent.state = tostring(b or "started")
+        end)
+    end)
+    for _, name in ipairs({ "LiveEventEnded", "LiveEventPaused" }) do
+        pcall(function()
+            P[name].OnClientEvent:Connect(function()
+                liveEvent.name = "No event running"
+                liveEvent.state = name == "LiveEventPaused" and "paused" or "idle"
+            end)
+        end)
+    end
+end
+
+-- ================================================================
+-- PARTS (reference only, no code)
+-- The Build tab and Auto Build were both removed. Auto Build poured every
+-- owned part into the first free grid cell of the plot and, once the
+-- inventory ran dry, kept re-sending a part the server had already rejected,
+-- which spammed "you do not own that part" hundreds of times.
+--
+-- For reference if parts are ever needed again: placement is grid based,
+-- PlacePart(partId, x, y, z, rot, paint), and the server answers
+-- PlaceRejected with a reason string. Observed payloads:
+--   "NotOwned"     - a real part id we have none of left
+--   "UnknownPart"  - an id the save does not know at all
+-- and a placed part shows up as a Model named "x,y,z" under plot.Parts.
+-- Inventory is absolute per-id counts pushed on InventoryChanged, and
+-- RequestInventory asks for a fresh snapshot.
+-- ================================================================
 
 local function tryBoss()
     if not Config.autoBoss then return end
@@ -540,6 +1411,34 @@ task.spawn(function()
     link(P.FuelCollected, onFuelRemoved)
     link(P.QuestsChanged, function(s) questState = s end)
     link(P.SkillsChanged, function(s) skillState = s end)
+    link(P.RollConfirmation, function(a, b, c, token)
+        -- the 4th argument is the skip token; sending it straight back with
+        -- true takes the result without waiting out the 2.5s spin
+        if Config.autoRollSkip and type(token) == "string" and token ~= "" then
+            pcall(function() P.ConfirmRollSkip:Fire(token, true) end)
+        end
+    end)
+    link(P.InventoryChanged, function(itemId, amount)
+        local n = tonumber(amount) or 0
+        if type(itemId) == "string" and n > 0 then
+            inventoryCount = inventoryCount + n
+            inventoryKinds = inventoryKinds + 1
+            lastInventoryGain = string.format("%s x%d", itemId, n)
+        end
+    end)
+    for _, name in ipairs({ "ChatNotify", "AlertPlayer" }) do
+        pcall(function()
+            link(P[name], function(a, b)
+                local text = b or a
+                if type(text) == "string" and #text < 200 then
+                    text = text:gsub("<[^>]->", "")
+                    codeMessages[#codeMessages + 1] = text
+                    if #codeMessages > 12 then table.remove(codeMessages, 1) end
+                end
+            end)
+        end)
+    end
+    pcall(function() P.RequestInventory:Fire() end)
     link(P.ZombieDied, function() end)
     link(P.BossSpawned, function()
         if Config.autoBoss then
@@ -604,7 +1503,9 @@ local function teleportToCar()
     local ok, err = pcall(function()
         hum.Sit = true
         hum:MoveTo(cf.Position)
-        hum.SeatPart = seat
+        -- SeatPart is read only, so assigning it always threw and made this
+        -- button report a failure; Seat:Sit is the call that actually welds.
+        seat:Sit(hum)
     end)
     if not ok then return false, tostring(err) end
     return true
@@ -615,7 +1516,7 @@ local function teleportToOrigin()
     local chassis = carChassis(car)
     if not chassis then return false, "No car deployed" end
     local origin = car:GetAttribute("RunOrigin")
-    if type(origin) ~= "Vector3" then return false, "No RunOrigin" end
+    if typeof(origin) ~= "Vector3" then return false, "No RunOrigin" end
     local target = origin + Vector3.new(0, 3, 0)
     local hum = LP.Character and LP.Character:FindFirstChildOfClass("Humanoid")
     if hum and hum.SeatPart then
@@ -627,12 +1528,20 @@ local function teleportToOrigin()
         root.AssemblyLinearVelocity = Vector3.new(0, 0, 0)
         root.CFrame = CFrame.new(target)
     end)
+    -- The server corrects a client-written character CFrame within a few
+    -- frames when the jump is long, so the write below can look like it
+    -- worked and then vanish. Check we actually stayed before saying success.
+    task.wait(0.4)
+    local again = LP.Character and LP.Character:FindFirstChild("HumanoidRootPart")
+    if again and (again.Position - target).Magnitude > 25 then
+        return false, "Too far to jump - get closer to your plot first"
+    end
     return true
 end
 
 
 -- ================================================================
--- UI â€” Oxidelib
+-- UI -- comment) Oxidelib
 -- ================================================================
 local Library = nil
 task.spawn(function()
@@ -747,6 +1656,10 @@ local labelHealth = InfoSub:AddLabel({ Text = "Health: -" })
 local labelPos = InfoSub:AddLabel({ Text = "Pos: -" })
 local labelCash = InfoSub:AddLabel({ Text = "Cash: -" })
 local labelDistance = InfoSub:AddLabel({ Text = "Distance: -" })
+local labelParts = InfoSub:AddLabel({ Text = "Parts Picked Up: 0" })
+local labelLastGain = InfoSub:AddLabel({ Text = "Last Part: -" })
+local labelBuy = InfoSub:AddLabel({ Text = "Last Buy: -" })
+local labelEventHome = InfoSub:AddLabel({ Text = "Event: -" })
 
 InfoSub:AddSection("Car")
 local labelCar = InfoSub:AddLabel({ Text = "Car: not deployed" })
@@ -765,8 +1678,12 @@ InfoSub:AddLabel({ Text = "by Exlumiaa Hub" })
 task.spawn(function()
     local avgMs = 0
     while true do
-        task.wait(0.5)
+        -- refresh faster while the ESP is on so the labels do not lag behind
+        task.wait(Config.espEnabled and 0.1 or 0.5)
         if isTomb() then break end
+        -- the ESP runs outside the label pcall: one bad label Set used to abort
+        -- the block before the ESP was ever reached, which left it dead
+        pcall(updateESP)
         pcall(function()
             local char = LP.Character
             local hum = char and char:FindFirstChildOfClass("Humanoid")
@@ -785,6 +1702,10 @@ task.spawn(function()
                 local dist = ls:FindFirstChild("⭐ Distance") or ls:FindFirstChild("Distance")
                 if dist then labelDistance:Set("Distance: " .. tostring(dist.Value)) end
             end
+            labelParts:Set("Parts Picked Up: " .. tostring(inventoryCount))
+            labelLastGain:Set("Last Part: " .. tostring(lastInventoryGain or "-"))
+            labelBuy:Set("Last Buy: " .. tostring(lastBuyResult or "-"))
+            labelEventHome:Set("Event: " .. tostring(liveEvent.name))
             local car = myCar()
             if car then
                 labelCar:Set("Car: deployed")
@@ -810,13 +1731,16 @@ task.spawn(function()
 end)
 
 -- ================================================================
--- MAIN TAB
+-- DRIVE TAB
 -- ================================================================
-local MainTab = Window:AddTab({ Name = "Main", Icon = "zap", Subtitle = "Cheats" })
-local SpeedSub = MainTab:AddSubTab("Speed")
-local CarSub = MainTab:AddSubTab("Car")
+local DriveTab = Window:AddTab({ Name = "Drive", Icon = "car", Subtitle = "Go faster" })
+local SpeedSub = DriveTab:AddSubTab("Speed")
+local DriveAutoSub = DriveTab:AddSubTab("Auto Drive")
+-- Spawning, stowing and teleporting the car is still driving, so the buttons
+-- live here instead of taking a whole tab of their own.
+local DriveCarSub = DriveTab:AddSubTab("Car")
 
-SpeedSub:AddSection("Speed Boost")
+SpeedSub:AddSection("Car Speed")
 SpeedSub:AddToggle({
     Name = "Speed Boost",
     Default = Config.speedBoost,
@@ -828,7 +1752,7 @@ SpeedSub:AddToggle({
     end,
 })
 SpeedSub:AddSlider({
-    Name = "Speed Multiplier",
+    Name = "How Much Faster",
     Min = 1,
     Max = 6,
     Default = Config.speedValue,
@@ -839,13 +1763,11 @@ SpeedSub:AddSlider({
         pcall(applyCarStats)
     end,
 })
-SpeedSub:AddLabel({ Text = "Raises the speed cap via DragFactor" })
-SpeedSub:AddLabel({ Text = "6x and above crashes the car" })
+SpeedSub:AddLabel({ Text = "1x normal, 3x = 3x speed" })
+SpeedSub:AddLabel({ Text = "Max 6x, above = crash" })
 
-SpeedSub:AddDivider()
-
-SpeedSub:AddSection("Auto Drive")
-SpeedSub:AddToggle({
+DriveAutoSub:AddSection("Let The Car Drive Itself")
+DriveAutoSub:AddToggle({
     Name = "Auto Drive",
     Default = Config.autoDrive,
     Flag = "bkz_autodrive",
@@ -854,7 +1776,7 @@ SpeedSub:AddToggle({
         pcall(syncAutoDrive)
     end,
 })
-SpeedSub:AddSlider({
+DriveAutoSub:AddSlider({
     Name = "Drive Speed",
     Min = 24,
     Max = 130,
@@ -865,117 +1787,20 @@ SpeedSub:AddSlider({
         Config.autoDriveSpeed = v
     end,
 })
-SpeedSub:AddLabel({ Text = "Drives the car along the run axis" })
-SpeedSub:AddLabel({ Text = "Above ~130 the car crashes" })
+DriveAutoSub:AddLabel({ Text = "Max 130, above = crash" })
+local labelDriveStatus = DriveAutoSub:AddLabel({ Text = "Status: off" })
+task.spawn(function()
+    while not isTomb() do
+        pcall(function() labelDriveStatus:Set("Status: " .. tostring(driveStatus)) end)
+        task.wait(0.5)
+    end
+end)
 
-CarSub:AddSection("Car")
-CarSub:AddToggle({
-    Name = "No Fuel Drain",
-    Default = Config.noFuel,
-    Flag = "bkz_nofuel",
-    Callback = function(s)
-        Config.noFuel = s
-    end,
-})
+DriveAutoSub:AddDivider()
 
-CarSub:AddDivider()
-
-CarSub:AddSection("Actions")
-CarSub:AddButton({
-    Name = "Deploy Car",
-    Primary = true,
-    Callback = function()
-        task.spawn(function()
-            local ok, err = spawnCar()
-            if ok then
-                notify("Car", "Car deployed", "success")
-            else
-                notify("Car", tostring(err), "error")
-            end
-        end)
-    end,
-})
-CarSub:AddButton({
-    Name = "Despawn Car",
-    Callback = function()
-        task.spawn(function()
-            local ok, err = despawnCar()
-            if ok then
-                notify("Car", "Car despawned", "success")
-            else
-                notify("Car", tostring(err), "error")
-            end
-        end)
-    end,
-})
-CarSub:AddButton({
-    Name = "Teleport To Car",
-    Callback = function()
-        local ok, err = teleportToCar()
-        if ok then
-            notify("Teleport", "Teleported to car", "success")
-        else
-            notify("Teleport", tostring(err), "error")
-        end
-    end,
-})
-CarSub:AddButton({
-    Name = "Teleport To Start",
-    Callback = function()
-        local ok, err = teleportToOrigin()
-        if ok then
-            notify("Teleport", "Teleported to start", "success")
-        else
-            notify("Teleport", tostring(err), "error")
-        end
-    end,
-})
-CarSub:AddLabel({ Text = "by Exlumiaa Hub" })
-
-CarSub:AddDivider()
-
-CarSub:AddSection("Combat")
-CarSub:AddToggle({
-    Name = "Damage Boost",
-    Default = Config.damageBoost,
-    Flag = "bkz_damage",
-    Callback = function(s) Config.damageBoost = s end,
-})
-CarSub:AddSlider({
-    Name = "Damage Multiplier",
-    Min = 0,
-    Max = 50,
-    Default = Config.damageValue,
-    Suffix = "x",
-    Flag = "bkz_damageval",
-    Callback = function(v) Config.damageValue = v end,
-})
-CarSub:AddLabel({ Text = "1 = +100% damage" })
-
-CarSub:AddDivider()
-
-CarSub:AddSection("Survival")
-CarSub:AddToggle({
-    Name = "Health Boost",
-    Default = Config.healthBoost,
-    Flag = "bkz_health",
-    Callback = function(s) Config.healthBoost = s end,
-})
-CarSub:AddSlider({
-    Name = "Health Extra",
-    Min = 0,
-    Max = 5000,
-    Default = Config.healthValue,
-    Suffix = "",
-    Flag = "bkz_healthval",
-    Callback = function(v) Config.healthValue = v end,
-})
-
-CarSub:AddDivider()
-
-CarSub:AddSection("Auto")
-CarSub:AddToggle({
-    Name = "Auto Crush",
+DriveAutoSub:AddSection("While Driving")
+DriveAutoSub:AddToggle({
+    Name = "Auto Crush Zombies",
     Default = Config.autoCrush,
     Flag = "bkz_crush",
     Callback = function(s)
@@ -983,10 +1808,9 @@ CarSub:AddToggle({
         pcall(syncAutoDrive)
     end,
 })
-CarSub:AddLabel({ Text = "Keeps the car driving through zombies" })
-
-CarSub:AddToggle({
-    Name = "Fuel Collect",
+DriveAutoSub:AddLabel({ Text = "Steers into zombies" })
+DriveAutoSub:AddToggle({
+    Name = "Catch Fuel Cans",
     Default = Config.fuelCollect,
     Flag = "bkz_fuel",
     Callback = function(s)
@@ -994,17 +1818,63 @@ CarSub:AddToggle({
         pcall(syncAutoDrive)
     end,
 })
-CarSub:AddLabel({ Text = "Chases fuel drops during boss fights" })
+DriveAutoSub:AddLabel({ Text = "Boss fights only" })
 
 -- ================================================================
--- VISUALS TAB
+-- COMBAT TAB
 -- ================================================================
-local VisualTab = Window:AddTab({ Name = "Visuals", Icon = "eye", Subtitle = "ESP" })
-local ESPSub = VisualTab:AddSubTab("Zombies")
+-- Zombies live here too, not in their own tab: you need the ESP on screen
+-- for Auto Crush to aim at anything, so splitting them apart only meant
+-- toggling back and forth.
+local CombatTab = Window:AddTab({ Name = "Combat", Icon = "swords", Subtitle = "Fight back" })
+local FightSub = CombatTab:AddSubTab("Power")
 
-ESPSub:AddSection("ESP")
+FightSub:AddSection("Kill Zombies Faster")
+FightSub:AddToggle({
+    Name = "Damage Boost",
+    Default = Config.damageBoost,
+    Flag = "bkz_damage",
+    Callback = function(s) Config.damageBoost = s end,
+})
+FightSub:AddSlider({
+    Name = "How Much More Damage",
+    Min = 0,
+    Max = 50,
+    Default = Config.damageValue,
+    Suffix = "x",
+    Flag = "bkz_damageval",
+    Callback = function(v) Config.damageValue = v end,
+})
+FightSub:AddLabel({ Text = "1x normal, 5x = 5x damage" })
+
+FightSub:AddDivider()
+
+FightSub:AddSection("Take Less Damage")
+FightSub:AddToggle({
+    Name = "Health Boost",
+    Default = Config.healthBoost,
+    Flag = "bkz_health",
+    Callback = function(s) Config.healthBoost = s end,
+})
+FightSub:AddSlider({
+    Name = "Extra Health",
+    Min = 0,
+    Max = 5000,
+    Default = Config.healthValue,
+    Suffix = "",
+    Flag = "bkz_healthval",
+    Callback = function(v) Config.healthValue = v end,
+})
+FightSub:AddLabel({ Text = "Adds to your max health" })
+
+-- ================================================================
+-- ZOMBIES (subtab of Combat)
+-- ================================================================
+local ESPSub = CombatTab:AddSubTab("Zombies")
+
+ESPSub:AddSection("Zombie ESP")
 ESPSub:AddToggle({
-    Name = "Zombie ESP",
+    Name = "Show Zombies",
     Default = Config.espEnabled,
     Flag = "bkz_esp",
     Callback = function(s)
@@ -1012,14 +1882,19 @@ ESPSub:AddToggle({
         if not s then pcall(clearESP) end
     end,
 })
+ESPSub:AddLabel({ Text = "Marks every visible zombie" })
+
+ESPSub:AddDivider()
+
+ESPSub:AddSection("What To Show")
 ESPSub:AddToggle({
-    Name = "Box",
+    Name = "Box Around Zombie",
     Default = Config.espBox,
     Flag = "bkz_espbox",
     Callback = function(s) Config.espBox = s end,
 })
 ESPSub:AddToggle({
-    Name = "Name",
+    Name = "Zombie Name",
     Default = Config.espName,
     Flag = "bkz_espname",
     Callback = function(s) Config.espName = s end,
@@ -1031,7 +1906,7 @@ ESPSub:AddToggle({
     Callback = function(s) Config.espDistance = s end,
 })
 ESPSub:AddSlider({
-    Name = "Max Distance",
+    Name = "Show Up To",
     Min = 50,
     Max = 1500,
     Default = Config.espMaxDist,
@@ -1039,38 +1914,199 @@ ESPSub:AddSlider({
     Flag = "bkz_espmax",
     Callback = function(v) Config.espMaxDist = v end,
 })
-ESPSub:AddLabel({ Text = "by Exlumiaa Hub" })
+ESPSub:AddLabel({ Text = "Hides zombies past this" })
 
 -- ================================================================
--- AUTOMATION TAB
+-- EARN TAB
 -- ================================================================
-local AutoTab = Window:AddTab({ Name = "Automation", Icon = "zap", Subtitle = "Auto" })
-local AutoSub = AutoTab:AddSubTab("Farming")
+local EarnTab = Window:AddTab({ Name = "Earn", Icon = "star", Subtitle = "Get rewards" })
+local EarnSub = EarnTab:AddSubTab("Rewards")
 
-AutoSub:AddSection("Progression")
-AutoSub:AddToggle({
+EarnSub:AddSection("Buy Things For Me")
+EarnSub:AddToggle({
     Name = "Auto Buy Skills",
     Default = Config.autoSkill,
     Flag = "bkz_autoskill",
     Callback = function(s) Config.autoSkill = s end,
 })
-AutoSub:AddToggle({
+EarnSub:AddLabel({ Text = "Buys skills when affordable" })
+EarnSub:AddToggle({
     Name = "Auto Claim Quests",
     Default = Config.autoQuest,
     Flag = "bkz_autoquest",
     Callback = function(s) Config.autoQuest = s end,
 })
+EarnSub:AddLabel({ Text = "Claims finished quests" })
 
-AutoSub:AddDivider()
+EarnSub:AddDivider()
 
-AutoSub:AddSection("Boss")
-AutoSub:AddToggle({
+EarnSub:AddSection("Roll For Items")
+EarnSub:AddToggle({
+    Name = "Auto Roll",
+    Default = Config.autoRoll,
+    Flag = "bkz_autoroll",
+    Callback = function(s)
+        Config.autoRoll = s
+        if s then
+            startAutoRoll()
+        else
+            rollStop = true
+        end
+    end,
+})
+EarnSub:AddLabel({ Text = "Auto rolls, walks to lever if far" })
+rollStationApi = EarnSub:AddDropdown({
+    Name = "Which One",
+    Options = { "Blocks", "Both", "Weapons" },
+    Default = "Blocks",
+    Flag = "bkz_rollstation",
+})
+EarnSub:AddLabel({ Text = "Blocks: car parts, reliable" })
+EarnSub:AddLabel({ Text = "Weapons: never worked, avoid" })
+
+EarnSub:AddDivider()
+
+EarnSub:AddSection("Free Stuff")
+EarnSub:AddToggle({
+    Name = "Auto Redeem Codes",
+    Default = Config.autoCodes,
+    Flag = "bkz_autocodes",
+    Callback = function(s)
+        Config.autoCodes = s
+        if s then startFreeStuff() end
+    end,
+})
+EarnSub:AddLabel({ Text = "Tries all live codes" })
+EarnSub:AddButton({
+    Name = "Redeem All Codes Now",
+    Primary = true,
+    Callback = function() task.spawn(redeemCodes, true) end,
+})
+EarnSub:AddToggle({
+    Name = "Auto Claim Free Chest",
+    Default = Config.autoChest,
+    Flag = "bkz_chest",
+    Callback = function(s)
+        Config.autoChest = s
+        if s then startFreeStuff() end
+    end,
+})
+EarnSub:AddLabel({ Text = "Grabs plot chest reward" })
+
+EarnSub:AddDivider()
+
+EarnSub:AddSection("Roll Options")
+EarnSub:AddToggle({
+    Name = "Buy What You Roll",
+    Default = Config.autoBuyRoll,
+    Flag = "bkz_autobuyroll",
+    Callback = function(s) Config.autoBuyRoll = s end,
+})
+EarnSub:AddLabel({ Text = "Buys the rolled item" })
+EarnSub:AddSlider({
+    Name = "Max Price Per Part",
+    Min = 0,
+    Max = 50000,
+    Step = 500,
+    Suffix = "",
+    Default = Config.maxBuyPrice,
+    Flag = "bkz_maxbuy",
+    Callback = function(v) Config.maxBuyPrice = v end,
+})
+EarnSub:AddLabel({ Text = "0 = no limit, costs cash" })
+EarnSub:AddToggle({
+    Name = "Skip The Spin Animation",
+    Default = Config.autoRollSkip,
+    Flag = "bkz_rollskip",
+    Callback = function(s) Config.autoRollSkip = s end,
+})
+EarnSub:AddLabel({ Text = "Skips the spin wait" })
+rollCategoryApi = EarnSub:AddMultiDropdown({
+    Name = "What To Roll",
+    Options = { "Block", "Engine", "Fuel", "Wheel" },
+    Default = { "Block", "Engine", "Fuel", "Wheel" },
+    Flag = "bkz_rollcats",
+})
+EarnSub:AddButton({
+    Name = "Apply Categories",
+    Callback = function()
+        task.spawn(function()
+            applyRollCategories()
+            notify("Roll", "Categories sent to the game", "success")
+        end)
+    end,
+})
+EarnSub:AddLabel({ Text = "Fewer = faster rolls" })
+
+EarnSub:AddDivider()
+
+EarnSub:AddSection("Boss Fights")
+EarnSub:AddToggle({
     Name = "Auto Join Boss",
     Default = Config.autoBoss,
     Flag = "bkz_autoboss",
     Callback = function(s) Config.autoBoss = s end,
 })
-AutoSub:AddLabel({ Text = "by Exlumiaa Hub" })
+EarnSub:AddLabel({ Text = "Joins boss instantly" })
+
+-- ================================================================
+-- CAR BUTTONS (subtab of Drive)
+-- ================================================================
+DriveCarSub:AddSection("Start And Stop")
+DriveCarSub:AddButton({
+    Name = "Put Out My Car",
+    Primary = true,
+    Callback = function()
+        task.spawn(function()
+            local ok, err = spawnCar()
+            if ok then
+                notify("Car", "Car is out", "success")
+            else
+                notify("Car", tostring(err), "error")
+            end
+        end)
+    end,
+})
+DriveCarSub:AddButton({
+    Name = "Put Car Away",
+    Callback = function()
+        task.spawn(function()
+            local ok, err = despawnCar()
+            if ok then
+                notify("Car", "Car is away", "success")
+            else
+                notify("Car", tostring(err), "error")
+            end
+        end)
+    end,
+})
+DriveCarSub:AddLabel({ Text = "Auto Drive spawns the car" })
+
+DriveCarSub:AddDivider()
+
+DriveCarSub:AddSection("Move Me")
+DriveCarSub:AddButton({
+    Name = "Jump Into My Car",
+    Callback = function()
+        local ok, err = teleportToCar()
+        if ok then
+            notify("Car", "You are in the car", "success")
+        else
+            notify("Car", tostring(err), "error")
+        end
+    end,
+})
+DriveCarSub:AddButton({
+    Name = "Back To Start Line",
+    Callback = function()
+        local ok, err = teleportToOrigin()
+        if ok then
+            notify("Car", "Back at the start", "success")
+        else
+            notify("Car", tostring(err), "error")
+        end
+    end,
+})
 
 -- ================================================================
 -- SETTINGS TAB
@@ -1135,10 +2171,7 @@ ConfigSub:AddDivider()
 
 ConfigSub:AddSection("About")
 ConfigSub:AddLabel({ Text = "Exlumiaa Hub" })
-ConfigSub:AddLabel({ Text = "Build and Kill Zombies" })
-ConfigSub:AddLabel({ Text = "Place: " .. tostring(game.PlaceId) })
 ConfigSub:AddLabel({ Text = "Toggle: Right Shift" })
-ConfigSub:AddLabel({ Text = "by Exlumiaa Hub" })
 
 
 -- ================================================================
@@ -1174,4 +2207,12 @@ end
 if Config.autoDrive or Config.autoCrush or Config.fuelCollect then
     task.spawn(startAutoDrive)
 end
+
+pcall(wireLiveEvent)
+
+pcall(function() Library:LoadConfig("default") end)
+task.wait(0.2)
+pcall(syncAutoDrive)
+
+print("[ExlumiaaHub] Build and Kill Zombies hub loaded!")
 
