@@ -6,16 +6,16 @@ local CollectionService = game:GetService("CollectionService")
 local LP = Players.LocalPlayer
 
 local _G_TOMB = "_ _dreamcarTomb"
-local _G_ALIVE = "_ _dreamcarAlive"
+local _G_GEN = "_ _dreamcarGen"
 
 do
-    local alive = rawget(_G, _G_ALIVE)
-    if alive == true then
-        rawset(_G, _G_TOMB, true)
-        task.wait(0.5)
-    end
-    rawset(_G, _G_TOMB, false)
-    rawset(_G, _G_ALIVE, true)
+    rawset(_G, _G_TOMB, true)
+    rawset(_G, _G_GEN, (rawget(_G, _G_GEN) or 0) + 1)
+end
+
+local _dreamcarGen = rawget(_G, _G_GEN)
+local function _dreamcarAlive()
+    return rawget(_G, _G_GEN) == _dreamcarGen
 end
 
 do
@@ -282,7 +282,7 @@ if not _G._hubKeyValidated then
             local gui = ksShowGate(function() gateDone = true end)
 
             while not gateDone do
-                if rawget(_G, _G_TOMB) then
+                if not _dreamcarAlive() then
                     pcall(function() gui:Destroy() end)
                     return
                 end
@@ -318,6 +318,7 @@ local Config = {
     unlimitedNitro = false,
     autoRebirth = false,
     autoQuest = false,
+    autoSkipQuest = false,
     autoFreeReward = false,
     autoUpgrades = false,
     autoClean = false,
@@ -380,6 +381,8 @@ local function safeSend(fn, ...)
     return ok
 end
 
+local notifyHub = function() end
+
 -- ========== CRATE AUTOMATION ==========
 local lastCrateSync = 0
 local crateSequence = 0
@@ -403,7 +406,7 @@ local function flushCrateQueue()
     crateFlushing = true
     task.spawn(function()
         while next(crateQueue) ~= nil do
-            if rawget(_G, _G_TOMB) then break end
+            if not _dreamcarAlive() then break end
             local id, payload = next(crateQueue)
             crateQueue[id] = nil
             crateSequence = crateSequence + 1
@@ -625,7 +628,7 @@ local function tryPlaceCrate()
         end)
 
         for _, cand in ipairs(candidates) do
-            if rawget(_G, _G_TOMB) then break end
+            if not _dreamcarAlive() then break end
             local worldPos = cand.pos
             if cand.dist <= 18
                 and not isObstructed(floor, worldPos)
@@ -639,7 +642,7 @@ local function tryPlaceCrate()
                 end)
                 local t1 = os.clock()
                 while not result and os.clock() - t1 < 2.5 do
-                    if rawget(_G, _G_TOMB) then break end
+                    if not _dreamcarAlive() then break end
                     task.wait(0.08)
                 end
                 if result and result.reason == "" then
@@ -977,7 +980,7 @@ local function approachModel(model)
         hum:MoveTo(dest)
         local t0 = tick()
         while tick() - t0 < 3 do
-            if rawget(_G, _G_TOMB) then return end
+            if not _dreamcarAlive() then return end
             local d = (Vector3.new(pos.X - hrp.Position.X, 0, pos.Z - hrp.Position.Z)).Magnitude
             if d <= 11 then break end
             task.wait(0.1)
@@ -993,7 +996,7 @@ local function runManualClean()
     local tool, model
     local t0 = tick()
     while tick() - t0 < 15 and cleanSession and Config.autoClean do
-        if rawget(_G, _G_TOMB) then return end
+        if not _dreamcarAlive() then return end
         tool = findCleaningTool()
         model = findDisplayModel(cleanSession.carId)
         if tool and model then break end
@@ -1016,7 +1019,7 @@ local function runManualClean()
     task.wait(0.3)
 
     while cleanSession and Config.autoClean do
-        if rawget(_G, _G_TOMB) then break end
+        if not _dreamcarAlive() then break end
 
         syncLiveClean(ctrl)
         repairLiveSession(getLiveSession(ctrl), model)
@@ -1130,7 +1133,7 @@ local function tryStartClean()
     end)
     local t0 = tick()
     while tick() - t0 < 2.5 and not cleanSession and Config.autoClean do
-        if rawget(_G, _G_TOMB) then break end
+        if not _dreamcarAlive() then break end
         task.wait(0.1)
     end
 
@@ -1140,7 +1143,7 @@ local function tryStartClean()
         end)
         t0 = tick()
         while tick() - t0 < 3 and not cleanSession and Config.autoClean do
-            if rawget(_G, _G_TOMB) then break end
+            if not _dreamcarAlive() then break end
             task.wait(0.1)
         end
     end
@@ -1149,13 +1152,13 @@ local function tryStartClean()
         if cleanSession.mode == "Manual" then
             pcall(runManualClean)
             while cleanSession and Config.autoClean do
-                if rawget(_G, _G_TOMB) then break end
+                if not _dreamcarAlive() then break end
                 task.wait(0.5)
                 pcall(runManualClean)
             end
         else
             while cleanSession and Config.autoClean do
-                if rawget(_G, _G_TOMB) then break end
+                if not _dreamcarAlive() then break end
                 task.wait(1)
             end
         end
@@ -1178,7 +1181,7 @@ end
 
 task.spawn(function()
     while true do
-        if rawget(_G, _G_TOMB) then break end
+        if not _dreamcarAlive() then break end
         if Config.autoClean then
             pcall(tryStartClean)
         end
@@ -1427,7 +1430,7 @@ end
 
 task.spawn(function()
     while true do
-        if rawget(_G, _G_TOMB) then break end
+        if not _dreamcarAlive() then break end
         if Config.autoLaunch or Config.autoShift or Config.autoNitro or Config.unlimitedNitro then
             pcall(tryAutoRace)
             task.wait(0.04)
@@ -1440,24 +1443,33 @@ end)
 -- ========== AUTO QUEST ==========
 local questSyncData = nil
 local lastQuestClaim = 0
+local lastQuestPushAt = 0
+local lastQuestSyncRequest = 0
+
+-- ========== QUEST WATCH ==========
+local questWatchLastSkip = 0
+local questWatchSkipGap = 6
+local questWatchPendingSkip = 0
+local questWatchPendingId = nil
+local questListenerBound = false
+
+local function processQuestSync(data)
+    if typeof(data) ~= "table" then return end
+    questSyncData = data
+    lastQuestPushAt = tick()
+end
 
 local function requestQuestSync()
     local net = getNet()
     if not net then return end
+    lastQuestSyncRequest = tick()
     safeSend(function() net.Quests.RequestSync.send({}) end)
 end
 
-local function listenQuestSync()
-    local net = getNet()
-    if not net then return end
-    local ok = pcall(function()
-        net.Quests.Sync.listen(function(data)
-            if typeof(data) == "table" then
-                questSyncData = data
-            end
-        end)
-    end)
-    return ok
+local function maybeRequestSync()
+    if (tick() - lastQuestPushAt) <= 45 then return end
+    if (tick() - lastQuestSyncRequest) <= 60 then return end
+    requestQuestSync()
 end
 
 local function claimCompletedQuests()
@@ -1486,7 +1498,89 @@ local function claimCompletedQuests()
 
     if claimed then
         lastQuestClaim = tick()
-        task.delay(2, requestQuestSync)
+    end
+end
+
+local function listenQuestSync()
+    if questListenerBound then return true end
+    local net = getNet()
+    if not net then return false end
+    local ok = pcall(function()
+        net.Quests.Sync.listen(processQuestSync)
+    end)
+    if not ok then return false end
+    pcall(function()
+        net.Quests.ClaimResult.listen(function(result)
+            if type(result) ~= "table" then return end
+            if result.questId ~= nil and result.questId == questWatchPendingId then
+                questWatchPendingSkip = 0
+                questWatchPendingId = nil
+            end
+            if result.success == false then
+                if result.reason == "skip_cooldown" then
+                    questWatchSkipGap = math.min(questWatchSkipGap + 4, 30)
+                    questWatchLastSkip = tick()
+                elseif result.reason == "claim_first" then
+                    task.delay(1, function() pcall(claimCompletedQuests) end)
+                end
+            end
+        end)
+    end)
+    questListenerBound = true
+    return true
+end
+
+local function runQuestWatchTick()
+    if Config.autoSkipQuest ~= true then return end
+
+    maybeRequestSync()
+
+    local daily = questSyncData and questSyncData.daily
+    if type(daily) ~= "table" or type(daily.quests) ~= "table" then return end
+
+    if questWatchPendingSkip > 0 then
+        if tick() - questWatchPendingSkip <= 15 then return end
+        questWatchPendingSkip = 0
+        questWatchPendingId = nil
+        questWatchSkipGap = math.min(questWatchSkipGap + 6, 30)
+        notifyHub({
+            Title = "Auto Skip",
+            Content = "No reply from server, slowing down.",
+            Type = "warning",
+            Duration = 5,
+        })
+    end
+
+    if tick() - questWatchLastSkip < questWatchSkipGap then return end
+
+    local net = getNet()
+    if not net then return end
+
+    local target = nil
+    local function consider(quest)
+        if target or type(quest) ~= "table" then return end
+        if quest.completed or quest.canSkip ~= true then return end
+        target = quest
+    end
+    if type(daily.order) == "table" then
+        for _, questId in ipairs(daily.order) do
+            consider(daily.quests[questId])
+        end
+    end
+    if not target then
+        for _, quest in pairs(daily.quests) do consider(quest) end
+    end
+    if not target then return end
+
+    questWatchLastSkip = tick()
+    local sent = safeSend(function()
+        net.Quests.SkipRequest.send({questId = target.id})
+    end)
+    if sent then
+        questWatchPendingSkip = tick()
+        questWatchPendingId = target.id
+    else
+        questWatchSkipGap = math.min(questWatchSkipGap + 4, 30)
     end
 end
 
@@ -1539,7 +1633,7 @@ local function tryPlaytimeGifts()
     local conn = net.PlayerData.PlaytimeRewardResult.listen(function(p) res = p end)
 
     for slot = 1, #PLAYTIME_MILESTONES do
-        if rawget(_G, _G_TOMB) then break end
+        if not _dreamcarAlive() then break end
         if playedSlots[dayKey .. ":" .. slot] then continue end
 
         res = nil
@@ -1548,7 +1642,7 @@ local function tryPlaytimeGifts()
         end)
         local t = tick()
         while tick() - t < 1.2 do
-            if rawget(_G, _G_TOMB) then break end
+            if not _dreamcarAlive() then break end
             if res then break end
             task.wait(0.05)
         end
@@ -1562,7 +1656,7 @@ local function tryPlaytimeGifts()
             end)
             local tr = tick()
             while tick() - tr < 1.2 do
-                if rawget(_G, _G_TOMB) then break end
+                if not _dreamcarAlive() then break end
                 if res then break end
                 task.wait(0.05)
             end
@@ -1605,14 +1699,14 @@ local function tryFreeReward()
         task.wait(0.15)
 
         for _, src in ipairs({ "robux_shop", "gem_shop" }) do
-            if rawget(_G, _G_TOMB) then break end
+            if not _dreamcarAlive() then break end
             claimRes = nil
             safeSend(function()
                 net.FreeReward.ClaimRequest.send({ source = src })
             end)
             local tc = tick()
             while tick() - tc < 1.5 do
-                if rawget(_G, _G_TOMB) then break end
+                if not _dreamcarAlive() then break end
                 if claimRes then break end
                 task.wait(0.05)
             end
@@ -1654,7 +1748,7 @@ end
 local crateWasActive = false
 task.spawn(function()
     while true do
-        if rawget(_G, _G_TOMB) then break end
+        if not _dreamcarAlive() then break end
 
         local active = crateWantsRun()
         if active then
@@ -1675,12 +1769,13 @@ end)
 
 task.spawn(function()
     while true do
-        if rawget(_G, _G_TOMB) then break end
+        if not _dreamcarAlive() then break end
 
         if Config.autoQuest then
             pcall(claimCompletedQuests)
-            if tick() % 30 < 3 then pcall(requestQuestSync) end
+            pcall(maybeRequestSync)
         end
+        pcall(runQuestWatchTick)
 
         if Config.autoRebirth then pcall(tryRebirth) end
         if Config.autoFreeReward then pcall(tryFreeReward) end
@@ -1764,7 +1859,7 @@ end
 
 task.spawn(function()
     while true do
-        if rawget(_G, _G_TOMB) then break end
+        if not _dreamcarAlive() then break end
         task.wait(0.2)
         pcall(function()
             for _, player in ipairs(Players:GetPlayers()) do
@@ -1791,6 +1886,11 @@ local Window = Library:CreateWindow({
     StatusText = "Exlumiaa Hub ready",
     GuiName = "ExlumiaaHub",
 })
+
+notifyHub = function(opts)
+    local ok, err = pcall(function() Window:Notify(opts) end)
+    if not ok then warn("[DreamCar] notify failed: " .. tostring(err)) end
+end
 
 local MainTab = Window:AddTab({Name = "Main", Icon = "agriculture", Subtitle = "Main Features"})
 local PlayerTab = Window:AddTab({Name = "Player", Icon = "person", Subtitle = "Local Player"})
@@ -1898,10 +1998,22 @@ FarmSub:AddMultiDropdown({
 RewardsSub:AddSection("Auto Rewards")
 RewardsSub:AddToggle({Name = "Auto Rebirth", Default = false, Callback = function(v) Config.autoRebirth = v end})
 RewardsSub:AddToggle({Name = "Auto Claim Quests", Default = false, Callback = function(v)
-    Config.autoQuest = v; if v then pcall(requestQuestSync); pcall(listenQuestSync) end
+    Config.autoQuest = v; if v then pcall(listenQuestSync); pcall(maybeRequestSync) end
 end})
 RewardsSub:AddToggle({Name = "Auto Free Reward", Default = false, Callback = function(v) Config.autoFreeReward = v end})
 RewardsSub:AddToggle({Name = "Auto Buy Upgrades", Default = false, Callback = function(v) Config.autoUpgrades = v end})
+
+RewardsSub:AddSection("Quest Watch")
+RewardsSub:AddToggle({Name = "Auto Skip Quest", Description = "Keep skipping daily quests", Flag = "dc_auto_skip", Default = false, Callback = function(v)
+    Config.autoSkipQuest = v
+    questWatchPendingSkip = 0
+    questWatchPendingId = nil
+    if v then
+        questWatchLastSkip = 0
+        questWatchSkipGap = 6
+        pcall(listenQuestSync)
+    end
+end})
 
 CleaningSub:AddSection("Cleaning")
 CleaningSub:AddToggle({Name = "Auto Clean", Description = "Clean shiny cars for gems", Default = false, Callback = function(v)
