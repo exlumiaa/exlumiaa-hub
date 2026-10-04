@@ -313,6 +313,8 @@ local function zoneSetFromList(sel)
     return set
 end
 
+local ZONE_LABELS = { "Zone 1 (Common)", "Zone 2 (Uncommon)", "Zone 3 (Rare)", "Zone 4 (Epic)", "Zone 5 (Legendary)", "Zone 6 (Mythic)", "Zone 7 (Divine)", "Zone 8 (Cosmic)", "Zone 9 (Secret)" }
+
 local notifyHub
 
 local function getRemote(name)
@@ -1053,7 +1055,7 @@ end })
 FarmSub:AddMultiDropdown({
     Name = "Break Zones",
     Description = "Zones Auto Break will mine (none selected = off)",
-    Options = { "Zone 1 (Common)", "Zone 2 (Uncommon)", "Zone 3 (Rare)", "Zone 4 (Epic)", "Zone 5 (Legendary)", "Zone 6 (Mythic)", "Zone 7 (Divine)", "Zone 8 (Cosmic)", "Zone 9 (Secret)" },
+    Options = ZONE_LABELS,
     Default = {},
     MaxVisible = 5,
     Flag = "bs_break_zones",
@@ -1162,6 +1164,39 @@ TpSub:AddButton({ Name = "Teleport to Egg Machine", Primary = false, Callback = 
         end
     end)
 end })
+TpSub:AddSection("Zone")
+local selectedZone = ""
+TpSub:AddDropdown({
+    Name = "Zone",
+    Description = "Which zone to teleport to",
+    Options = ZONE_LABELS,
+    Default = "",
+    Flag = "bs_tp_zone",
+    Callback = function(v) selectedZone = v end,
+})
+TpSub:AddButton({
+    Name = "Teleport to Zone",
+    Primary = true,
+    Callback = function()
+        if not selectedZone or selectedZone == "" then
+            if notifyHub then notifyHub({ Title = "Teleport", Content = "Select a zone first!", Type = "warning", Duration = 3 }) end
+            return
+        end
+        local n = selectedZone:match("^Zone (%d+)")
+        pcall(function()
+            local char, hrp, hum = getChar()
+            local build = workspace:FindFirstChild("Build")
+            local zoneBuilds = build and build:FindFirstChild("ZoneBuilds")
+            local zone = zoneBuilds and zoneBuilds:FindFirstChild("Zone" .. tostring(n))
+            if zone and hrp then
+                hrp.CFrame = CFrame.new(zone:GetPivot().Position + Vector3.new(0, 5, 0))
+                if notifyHub then notifyHub({ Title = "Teleport", Content = "Teleported to " .. selectedZone, Type = "success", Duration = 3 }) end
+            elseif notifyHub then
+                notifyHub({ Title = "Teleport", Content = "Zone not found", Type = "error", Duration = 3 })
+            end
+        end)
+    end,
+})
 
 do
     local UIS = game:GetService("UserInputService")
