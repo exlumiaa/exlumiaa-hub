@@ -20,6 +20,15 @@ end
 
 do
     pcall(function()
+        game:GetService("VirtualInputManager"):SendKeyEvent(false, Enum.KeyCode.W, false, game)
+    end)
+    pcall(function()
+        game:GetService("RunService"):UnbindFromRenderStep("BSE_AUTOAIM")
+    end)
+end
+
+do
+    pcall(function()
         for _, gui in ipairs(game:GetService("CoreGui"):GetChildren()) do
             if gui:IsA("ScreenGui") and (gui.Name == "Oxidelib" or gui.Name == "ExlumiaaHub" or gui.Name == "Obsidian") then
                 gui:Destroy()
@@ -356,6 +365,109 @@ local function getChar()
     return nil
 end
 
+local VIM = game:GetService("VirtualInputManager")
+local RunService = game:GetService("RunService")
+
+local wHeld = false
+local function pressW()
+    if not wHeld then
+        wHeld = true
+        pcall(function() VIM:SendKeyEvent(true, Enum.KeyCode.W, false, game) end)
+    end
+end
+local function releaseW()
+    if wHeld then
+        wHeld = false
+        pcall(function() VIM:SendKeyEvent(false, Enum.KeyCode.W, false, game) end)
+    end
+end
+
+local aiming = false
+local aimTarget = nil
+local function setAim(pos)
+    aimTarget = pos
+    if not aiming then
+        aiming = true
+        pcall(function()
+            RunService:BindToRenderStep("BSE_AUTOAIM", Enum.RenderPriority.Camera.Value + 1, function()
+                local t = aimTarget
+                local cam = workspace.CurrentCamera
+                if t and cam then
+                    local cp = cam.CFrame.Position
+                    cam.CFrame = CFrame.lookAt(cp, Vector3.new(t.X, cp.Y, t.Z))
+                end
+            end)
+        end)
+    end
+end
+local function clearAim()
+    aimTarget = nil
+    if aiming then
+        aiming = false
+        pcall(function() RunService:UnbindFromRenderStep("BSE_AUTOAIM") end)
+    end
+end
+local function stopTravel()
+    releaseW()
+    clearAim()
+end
+local function kbBlocked()
+    local ok, tb = pcall(function() return game:GetService("UserInputService"):GetFocusedTextBox() end)
+    return ok and tb ~= nil
+end
+
+local tpToken = 0
+local tpBusy = false
+local function stagedTeleport(dest, hop, interval)
+    if not dest then return end
+    tpToken = tpToken + 1
+    local myToken = tpToken
+    tpBusy = true
+    task.spawn(function()
+        local HOP = hop or 300
+        local INT = interval or 1.2
+        local steps = 0
+        while _alive() and myToken == tpToken do
+            steps = steps + 1
+            if steps > 12 then
+                if myToken == tpToken then tpBusy = false end
+                if notifyHub then
+                    notifyHub({ Title = "Teleport", Content = "Kept getting pulled back - teleport failed", Type = "warning", Duration = 3 })
+                end
+                return
+            end
+            local char, hrp = getChar()
+            if not char then
+                if myToken == tpToken then tpBusy = false end
+                return
+            end
+            local pos = hrp.Position
+            local delta = dest - pos
+            local dist = delta.Magnitude
+            if dist < 12 then
+                hrp.AssemblyLinearVelocity = Vector3.zero
+                hrp.AssemblyAngularVelocity = Vector3.zero
+                if myToken == tpToken then tpBusy = false end
+                return
+            end
+            local step
+            if dist <= HOP then
+                step = dest
+            else
+                step = pos + delta.Unit * HOP
+            end
+            local rot = hrp.CFrame - pos
+            hrp.AssemblyLinearVelocity = Vector3.zero
+            hrp.AssemblyAngularVelocity = Vector3.zero
+            hrp.CFrame = CFrame.new(step) * rot
+            hrp.AssemblyLinearVelocity = Vector3.zero
+            hrp.AssemblyAngularVelocity = Vector3.zero
+            task.wait(INT)
+        end
+        if myToken == tpToken then tpBusy = false end
+    end)
+end
+
 local function isLiveEgg(p)
     return p.Parent ~= nil and p:IsA("BasePart")
         and not p:GetAttribute("Broken")
@@ -415,16 +527,21 @@ task.spawn(function()
     local lastHit = 0
     local lastEquip = 0
     while _alive() do
-        if Config.autoBreak and not Config.autoTreadmill then
+        if Config.autoBreak and not Config.autoTreadmill and not tpBusy then
             pcall(function()
                 local char, hrp, hum = getChar()
                 if char and not heldAnimalTool(char) then
                     local egg, d = nearestLiveEgg(hrp.Position, 100000)
                     if egg then
                         if d > 6.5 then
-                            hum:MoveTo(egg.Position)
+                            if kbBlocked() then
+                                stopTravel()
+                            else
+                                setAim(egg.Position)
+                                pressW()
+                            end
                         else
-                            hum:MoveTo(hrp.Position)
+                            stopTravel()
                             hrp.CFrame = CFrame.new(hrp.Position, Vector3.new(egg.Position.X, hrp.Position.Y, egg.Position.Z))
                             local bp = LP:FindFirstChild("Backpack")
                             local held = char:FindFirstChild("Pickaxe")
@@ -444,13 +561,19 @@ task.spawn(function()
                             end
                         end
                     else
+                        stopTravel()
                         task.wait(1)
                     end
+                else
+                    stopTravel()
                 end
             end)
+        else
+            stopTravel()
         end
         task.wait(0.15)
     end
+    stopTravel()
 end)
 
 -- ================================================================
@@ -742,8 +865,8 @@ task.spawn(function()
                 local char, hrp = getChar()
                 if char and not heldAnimalTool(char) then
                     local pos = getTreadmillPos(getOwnPlot())
-                    if pos and (hrp.Position - pos).Magnitude > 10 then
-                        hrp.CFrame = CFrame.new(pos + Vector3.new(0, 2, 0))
+                    if pos and (hrp.Position - pos).Magnitude > 10 and not tpBusy then
+                        stagedTeleport(pos + Vector3.new(0, 2, 0))
                     end
                 end
             end)
@@ -930,25 +1053,71 @@ end)
 -- LOOP: WALKSPEED + ANTI-AFK
 -- ================================================================
 task.spawn(function()
-    local origSpeed = nil
+    local wasOn = false
+    local function gameMappedSpeed()
+        local ok, v = pcall(function()
+            return require(ReplicatedStorage.Shared.SpeedConfig).SpeedPowerToWalkSpeed(LP:GetAttribute("SpeedPower") or 10)
+        end)
+        if ok and type(v) == "number" then return v end
+        return nil
+    end
+    local creatures = {}
+    local nextScan = 0
+    local function refreshCreatures()
+        creatures = {}
+        local zb = workspace:FindFirstChild("Build") and workspace.Build:FindFirstChild("ZoneBuilds")
+        if not zb then return end
+        for _, d in ipairs(zb:GetDescendants()) do
+            if d:IsA("Model") then
+                local hum = d:FindFirstChildOfClass("Humanoid")
+                local hrp = d:FindFirstChild("HumanoidRootPart")
+                if hum and hrp then
+                    table.insert(creatures, hrp)
+                end
+            end
+        end
+    end
+    local function nearCreature(pos)
+        local best = math.huge
+        for i = #creatures, 1, -1 do
+            local cr = creatures[i]
+            if not cr.Parent then
+                table.remove(creatures, i)
+            else
+                local d = (Vector3.new(cr.Position.X, 0, cr.Position.Z) - Vector3.new(pos.X, 0, pos.Z)).Magnitude
+                if d < best then best = d end
+            end
+        end
+        return best
+    end
     while _alive() do
         pcall(function()
             local char, hrp, hum = getChar()
             if char and hum then
                 if Config.speedOn then
-                    if origSpeed == nil then origSpeed = hum.WalkSpeed end
-                    if math.abs(hum.WalkSpeed - Config.speedVal) > 0.5 then
-                        hum.WalkSpeed = Config.speedVal
+                    local target = math.clamp(Config.speedVal, 16, 200)
+                    local now = os.clock()
+                    if now >= nextScan then
+                        nextScan = now + 5
+                        refreshCreatures()
                     end
-                elseif origSpeed then
-                    if math.abs(hum.WalkSpeed - origSpeed) > 0.5 then
-                        hum.WalkSpeed = origSpeed
+                    if #creatures > 0 and nearCreature(hrp.Position) < 110 then
+                        target = math.min(target, 100)
                     end
-                    origSpeed = nil
+                    if math.abs(hum.WalkSpeed - target) > 0.5 then
+                        hum.WalkSpeed = target
+                    end
+                    wasOn = true
+                elseif wasOn then
+                    wasOn = false
+                    local mapped = gameMappedSpeed()
+                    if mapped then
+                        hum.WalkSpeed = math.clamp(mapped, 16, 200)
+                    end
                 end
             end
         end)
-        task.wait(1.5)
+        task.wait(0.15)
     end
 end)
 
@@ -1114,7 +1283,7 @@ BatSub:AddToggle({ Name = "Auto Swing", Description = "Auto hit the nearest play
 end })
 
 PlayerSub:AddSection("Speed")
-PlayerSub:AddToggle({ Name = "WalkSpeed", Default = false, Flag = "bs_walkspeed", Callback = function(v)
+PlayerSub:AddToggle({ Name = "WalkSpeed", Description = "Keep speed value close to your natural game speed", Default = false, Flag = "bs_walkspeed", Callback = function(v)
     Config.speedOn = v
 end })
 PlayerSub:AddSlider({ Name = "Speed Value", Min = 16, Max = 200, Default = 60, Rounding = 0, Flag = "bs_speed_val", Callback = function(v)
@@ -1128,11 +1297,22 @@ end })
 TpSub:AddSection("Teleport")
 local function tpToBase()
     pcall(function()
-        local char, hrp, hum = getChar()
+        local char = getChar()
         local plot = getOwnPlot()
-        local hb = plot and plot:FindFirstChild("Hitbox")
-        if char and hb then
-            hrp.CFrame = CFrame.new(hb.Position + Vector3.new(0, 5, 0))
+        if char and plot then
+            local dest = nil
+            local sp = plot:FindFirstChild("SpawnPoint")
+            if sp and sp:IsA("BasePart") then
+                dest = sp.Position + Vector3.new(0, 3, 0)
+            else
+                local hb = plot:FindFirstChild("Hitbox")
+                if hb then
+                    dest = hb.Position + Vector3.new(0, 5, 0)
+                end
+            end
+            if dest then
+                stagedTeleport(dest, 350, 1.2)
+            end
         end
     end)
 end
@@ -1144,11 +1324,11 @@ TpSub:AddToggle({ Name = "Q Key to Base", Description = "Press Q anytime to tele
 end })
 TpSub:AddButton({ Name = "Teleport to Nearest Egg", Primary = false, Callback = function()
     pcall(function()
-        local char, hrp, hum = getChar()
+        local char, hrp = getChar()
         if char then
             local egg = nearestLiveEgg(hrp.Position, 100000, true)
             if egg then
-                hrp.CFrame = CFrame.new(egg.Position + Vector3.new(0, 3, 0))
+                stagedTeleport(egg.Position + Vector3.new(0, 3, 0))
             elseif notifyHub then
                 notifyHub({ Title = "Teleport", Content = "No live eggs found", Type = "warning", Duration = 3 })
             end
@@ -1157,10 +1337,10 @@ TpSub:AddButton({ Name = "Teleport to Nearest Egg", Primary = false, Callback = 
 end })
 TpSub:AddButton({ Name = "Teleport to Egg Machine", Primary = false, Callback = function()
     pcall(function()
-        local char, hrp, hum = getChar()
+        local char = getChar()
         local em = workspace:FindFirstChild("EggMachine")
         if char and em then
-            hrp.CFrame = CFrame.new(em:GetPivot().Position + Vector3.new(0, 4, 0))
+            stagedTeleport(em:GetPivot().Position + Vector3.new(0, 4, 0))
         end
     end)
 end })
@@ -1184,13 +1364,20 @@ TpSub:AddButton({
         end
         local n = selectedZone:match("^Zone (%d+)")
         pcall(function()
-            local char, hrp, hum = getChar()
+            local char, hrp = getChar()
             local build = workspace:FindFirstChild("Build")
             local zoneBuilds = build and build:FindFirstChild("ZoneBuilds")
             local zone = zoneBuilds and zoneBuilds:FindFirstChild("Zone" .. tostring(n))
-            if zone and hrp then
-                hrp.CFrame = CFrame.new(zone:GetPivot().Position + Vector3.new(0, 5, 0))
-                if notifyHub then notifyHub({ Title = "Teleport", Content = "Teleported to " .. selectedZone, Type = "success", Duration = 3 }) end
+            if char and zone and hrp then
+                local zp = zone:GetPivot().Position
+                local from = hrp.Position
+                local full = (zp - from).Magnitude
+                local target = zp + Vector3.new(0, 5, 0)
+                if full > 100 then
+                    target = from + (zp - from).Unit * (full - 60) + Vector3.new(0, 5, 0)
+                end
+                stagedTeleport(target, 300, 1.2)
+                if notifyHub then notifyHub({ Title = "Teleport", Content = "Teleporting to " .. selectedZone, Type = "success", Duration = 3 }) end
             elseif notifyHub then
                 notifyHub({ Title = "Teleport", Content = "Zone not found", Type = "error", Duration = 3 })
             end
