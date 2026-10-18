@@ -8,9 +8,9 @@
 --   DepositLogs:FireServer(false)                    -> sells carried logs at a DepositPad
 -- Fists server reach is 11 studs, so the loop always walks within reach first.
 
--- GameId is the experience's root place, which is not always the place being
--- played, so either id matching is enough.
-if tostring(game.GameId) ~= "77239332768345" and tostring(game.PlaceId) ~= "77239332768345" then return end
+-- Keyed on game.GameId, which for this experience is the universe id and covers
+-- every place in it (both 77239332768345 and the twin 103363457515322).
+if tostring(game.GameId) ~= "10767386157" then return end
 
 
 local Players = game:GetService("Players")
