@@ -40,7 +40,7 @@ end
 local Library = nil
 task.spawn(function()
     local ok, ret = pcall(function()
-        return loadstring(game:HttpGet("https://raw.githubusercontent.com/Naellx/Oxidelib/main/Oxidelib.lua"))()
+        return loadstring(game:HttpGet("https://raw.githubusercontent.com/exlumiaa/exlumiaa-hub/main/Oxidelib.lua"))()
     end)
     Library = ok and ret or nil
 end)

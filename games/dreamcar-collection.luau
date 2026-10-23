@@ -1870,7 +1870,7 @@ task.spawn(function()
 end)
 
 -- ========== UI ==========
-local OxidelibUrl = "https://raw.githubusercontent.com/Naellx/Oxidelib/main/Oxidelib.lua"
+local OxidelibUrl = "https://raw.githubusercontent.com/exlumiaa/exlumiaa-hub/main/Oxidelib.lua"
 local Library = loadstring(game:HttpGet(OxidelibUrl))()
 local Window = Library:CreateWindow({
     Name = "Exlumiaa Hub",
