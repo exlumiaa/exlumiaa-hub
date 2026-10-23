@@ -308,6 +308,11 @@ local Config = {
     speedVal = 60,
     antiAFK = false,
     tpKeyQ = true,
+    dmgMult = 1,
+    autoSteal = false,
+    stealRarities = {},
+    stealMinWeight = 0,
+    stealMaxDist = 700,
 }
 rawset(_G, "_breakStealConfig", Config)
 
@@ -323,6 +328,12 @@ local function zoneSetFromList(sel)
 end
 
 local ZONE_LABELS = { "Zone 1 (Common)", "Zone 2 (Uncommon)", "Zone 3 (Rare)", "Zone 4 (Epic)", "Zone 5 (Legendary)", "Zone 6 (Mythic)", "Zone 7 (Divine)", "Zone 8 (Cosmic)", "Zone 9 (Secret)" }
+
+local STEAL_RARITY_OPTIONS
+pcall(function() STEAL_RARITY_OPTIONS = require(ReplicatedStorage.Shared.IndexConfig).RarityOrder end)
+if type(STEAL_RARITY_OPTIONS) ~= "table" or #STEAL_RARITY_OPTIONS == 0 then
+    STEAL_RARITY_OPTIONS = { "Common", "Uncommon", "Rare", "Epic", "Legendary", "Mythic", "Divine", "Cosmic", "Secret", "Celestial", "Inferno", "Void", "Omega" }
+end
 
 local notifyHub
 
@@ -526,8 +537,9 @@ local placeCounter = math.random(1, 5000)
 task.spawn(function()
     local lastHit = 0
     local lastEquip = 0
+    local walkPos, walkAt = nil, 0
     while _alive() do
-        if Config.autoBreak and not Config.autoTreadmill and not tpBusy then
+        if Config.autoBreak and not Config.autoSteal and not Config.autoTreadmill and not tpBusy then
             pcall(function()
                 local char, hrp, hum = getChar()
                 if char and not heldAnimalTool(char) then
@@ -539,6 +551,12 @@ task.spawn(function()
                             else
                                 setAim(egg.Position)
                                 pressW()
+                                if not walkPos or (hrp.Position - walkPos).Magnitude > 4 then
+                                    walkPos, walkAt = hrp.Position, os.clock()
+                                elseif os.clock() - walkAt > 1.5 then
+                                    walkAt = os.clock()
+                                    hum.Jump = true
+                                end
                             end
                         else
                             stopTravel()
@@ -550,9 +568,15 @@ task.spawn(function()
                                 hum:EquipTool(bp:FindFirstChild("Pickaxe"))
                                 held = char:FindFirstChild("Pickaxe")
                             end
-                            if held and os.clock() - lastHit >= 0.4 then
+                            local mult = math.clamp(math.floor(tonumber(Config.dmgMult) or 1), 1, 5)
+                            local hitGap = 0.4 + (mult - 1) * 0.15
+                            if held and os.clock() - lastHit >= hitGap then
                                 lastHit = os.clock()
-                                if fireRS("EggHitRequest", egg) then
+                                local fired = false
+                                for _ = 1, mult do
+                                    if fireRS("EggHitRequest", egg) then fired = true end
+                                end
+                                if fired then
                                     pcall(function()
                                         local sfx = held:FindFirstChild("Handle")
                                         sfx = sfx and sfx:FindFirstChild("PickaxeSwoosh")
@@ -574,6 +598,184 @@ task.spawn(function()
         task.wait(0.15)
     end
     stopTravel()
+end)
+
+-- ================================================================
+-- HELPERS + LOOP: AUTO STEAL
+-- ================================================================
+local stealTpBlockedUntil = 0
+local stealLastPos, stealLastMoveAt = nil, 0
+local stealTpReverts = 0
+
+local function stealTravelTo(hrp, hum, dest)
+    local pos = hrp.Position
+    local dist = (dest - pos).Magnitude
+    if dist < 10 then return dist end
+    if os.clock() >= stealTpBlockedUntil and dist > 40 and not tpBusy then
+        local before = pos
+        local stepPos = if dist <= 320 then dest else pos + (dest - pos).Unit * 320
+        local rot = hrp.CFrame - pos
+        hrp.AssemblyLinearVelocity = Vector3.zero
+        hrp.AssemblyAngularVelocity = Vector3.zero
+        hrp.CFrame = CFrame.new(stepPos) * rot
+        task.wait(0.5)
+        local moved = (hrp.Position - before).Magnitude
+        if moved < 60 then
+            stealTpReverts = stealTpReverts + 1
+            if stealTpReverts >= 2 then
+                stealTpReverts = 0
+                stealTpBlockedUntil = os.clock() + 4
+            end
+        else
+            stealTpReverts = 0
+        end
+        task.wait(0.7)
+    else
+        hum:MoveTo(dest)
+        task.wait(0.35)
+        if not stealLastPos or (hrp.Position - stealLastPos).Magnitude > 4 then
+            stealLastPos, stealLastMoveAt = hrp.Position, os.clock()
+        elseif os.clock() - stealLastMoveAt > 1.5 then
+            stealLastMoveAt = os.clock()
+            hum.Jump = true
+        end
+    end
+    return (dest - hrp.Position).Magnitude
+end
+
+local function stealTargetModel(promptPart)
+    local node = promptPart
+    for _ = 1, 4 do
+        if not node then break end
+        if node:GetAttribute("AnimalName") then return node end
+        node = node.Parent
+    end
+    local best, bestD = nil, 20
+    for _, m in ipairs(CollectionService:GetTagged("AnimalPickup")) do
+        local ok, pivot = pcall(function() return m:GetPivot().Position end)
+        if ok then
+            local d = (pivot - promptPart.Position).Magnitude
+            if d < bestD then best, bestD = m, d end
+        end
+    end
+    return best
+end
+
+local function stealAllowed(model)
+    local hasRar = next(Config.stealRarities) ~= nil
+    local minW = tonumber(Config.stealMinWeight) or 0
+    if not model then
+        return (not hasRar) and minW <= 0
+    end
+    if hasRar and not Config.stealRarities[model:GetAttribute("Rarity")] then return false end
+    if minW > 0 then
+        local w = model:GetAttribute("WeightKg")
+        if not (typeof(w) == "number" and w >= minW) then return false end
+    end
+    return true
+end
+
+local function nearestStealTarget(pos, blacklist)
+    local prompt, part, model, dBest = nil, nil, nil, 100000
+    for _, pr in ipairs(CollectionService:GetTagged("SmartPrompt")) do
+        if pr:IsA("ProximityPrompt") and pr.Name == "StealPrompt" and pr.Enabled then
+            local prPart = pr.Parent
+            if prPart and prPart:IsA("BasePart") then
+                local m = stealTargetModel(prPart)
+                local untilTime = blacklist[pr] or blacklist[prPart] or (m and blacklist[m])
+                if (not untilTime or untilTime < os.clock()) and stealAllowed(m) then
+                    local d = (prPart.Position - pos).Magnitude
+                    if d < dBest then
+                        prompt, part, model, dBest = pr, prPart, m, d
+                    end
+                end
+            end
+        end
+    end
+    return prompt, part, model, dBest
+end
+
+task.spawn(function()
+    local blacklist = {}
+    local stealState = "idle"
+    local stealAt = 0
+    local holdEndAt = 0
+    local carryAt = 0
+    local nudgeUntil = 0
+    local nudgePoint = nil
+
+    while _alive() do
+        if Config.autoSteal then
+            pcall(function()
+                local char, hrp, hum = getChar()
+                if not char then return end
+                local carrying = LP:GetAttribute("Carrying") ~= nil
+                if carrying then
+                    stealState = "idle"
+                    if carryAt == 0 then carryAt = os.clock() end
+                    local plot = getOwnPlot()
+                    local hb = plot and plot:FindFirstChild("Hitbox")
+                    if hb and hb:IsA("BasePart") then
+                        local dest = hb.Position + Vector3.new(0, 4, 0)
+                        local dist = (dest - hrp.Position).Magnitude
+                        if os.clock() < nudgeUntil and nudgePoint then
+                            hum:MoveTo(nudgePoint)
+                            task.wait(0.3)
+                        elseif dist > 12 then
+                            stealTravelTo(hrp, hum, dest)
+                        else
+                            hum:MoveTo(hb.Position)
+                            task.wait(0.3)
+                            if os.clock() - carryAt > 14 then
+                                nudgePoint = hb.Position + (hrp.Position - hb.Position).Unit * 55
+                                nudgeUntil = os.clock() + 2.5
+                                carryAt = os.clock() - 8
+                            end
+                        end
+                    end
+                else
+                    carryAt = 0
+                    nudgeUntil = 0
+                    nudgePoint = nil
+                    local prompt, part, model, d = nearestStealTarget(hrp.Position, blacklist)
+                    if prompt and d and d > (tonumber(Config.stealMaxDist) or 700) then
+                        prompt = nil
+                    end
+                    if not prompt then
+                        task.wait(1)
+                    else
+                        local dest = part.Position + Vector3.new(0, 3, 0)
+                        local dist = (dest - hrp.Position).Magnitude
+                        if dist > 8 then
+                            stealState = "idle"
+                            stealTravelTo(hrp, hum, dest)
+                        elseif stealState == "idle" and os.clock() - stealAt > 1.5 then
+                            stealState = "hold"
+                            stealAt = os.clock()
+                            holdEndAt = stealAt + 0.55
+                            pcall(function() prompt:InputHoldBegin() end)
+                        elseif stealState == "hold" and os.clock() >= holdEndAt then
+                            stealState = "wait"
+                            pcall(function() prompt:InputHoldEnd() end)
+                            stealAt = os.clock()
+                        elseif stealState == "wait" and os.clock() - stealAt > 1.2 then
+                            stealState = "idle"
+                            if not LP:GetAttribute("Carrying") then
+                                blacklist[prompt] = os.clock() + 8
+                                if model then blacklist[model] = os.clock() + 8 end
+                            end
+                        else
+                            task.wait(0.2)
+                        end
+                    end
+                end
+            end)
+        else
+            stealState = "idle"
+            carryAt = 0
+        end
+        task.wait(0.25)
+    end
 end)
 
 -- ================================================================
@@ -1138,7 +1340,7 @@ end)
 -- ================================================================
 -- UI
 -- ================================================================
-local OxidelibUrl = "https://raw.githubusercontent.com/Naellx/Oxidelib/main/Oxidelib.lua"
+local OxidelibUrl = "https://raw.githubusercontent.com/exlumiaa/exlumiaa-hub/main/Oxidelib.lua"
 local Library = loadstring(game:HttpGet(OxidelibUrl))()
 
 Library.ConfigFolder = "exlumiaa/breakandsteal"
@@ -1210,7 +1412,7 @@ for _, sub in ipairs({ FarmSub, BaseSub, RewardSub, BatSub, PlayerSub, TpSub, ES
 end
 
 FarmSub:AddSection("Egg Loop")
-FarmSub:AddToggle({ Name = "Auto Break", Description = "Break the nearest egg automatically", Default = false, Flag = "bs_auto_break", Callback = function(v)
+FarmSub:AddToggle({ Name = "Auto Break", Default = false, Flag = "bs_auto_break", Callback = function(v)
     Config.autoBreak = v
     if v and Config.autoTreadmill then
         Config.autoTreadmill = false
@@ -1223,7 +1425,6 @@ FarmSub:AddToggle({ Name = "Auto Break", Description = "Break the nearest egg au
 end })
 FarmSub:AddMultiDropdown({
     Name = "Break Zones",
-    Description = "Zones Auto Break will mine (none selected = off)",
     Options = ZONE_LABELS,
     Default = {},
     MaxVisible = 5,
@@ -1232,34 +1433,66 @@ FarmSub:AddMultiDropdown({
         Config.breakZones = zoneSetFromList(sel)
     end,
 })
-FarmSub:AddToggle({ Name = "Auto Hatch & Skip", Description = "Skip growth + hatch eggs in inventory", Default = false, Flag = "bs_auto_hatch", Callback = function(v)
+FarmSub:AddToggle({ Name = "Auto Hatch & Skip", Default = false, Flag = "bs_auto_hatch", Callback = function(v)
     Config.autoHatch = v
+end })
+FarmSub:AddSlider({ Name = "Hit Multiplier", Min = 1, Max = 5, Default = 1, Rounding = 0, Flag = "bs_dmg_mult", Callback = function(v)
+    Config.dmgMult = v
+end })
+
+FarmSub:AddSection("Steal")
+FarmSub:AddToggle({ Name = "Auto Steal", Default = false, Flag = "bs_auto_steal", Callback = function(v)
+    Config.autoSteal = v
+    if v and Config.autoBreak then
+        Config.autoBreak = false
+        if notifyHub then notifyHub({ Title = "Break and Steal", Content = "Auto Break turned off (Auto Steal needs to move you)", Type = "warning", Duration = 3 }) end
+    end
+end })
+FarmSub:AddMultiDropdown({
+    Name = "Steal Rarities",
+    Options = STEAL_RARITY_OPTIONS,
+    Default = {},
+    MaxVisible = 6,
+    Flag = "bs_steal_rarities",
+    Callback = function(sel)
+        local set = {}
+        if type(sel) == "table" then
+            for _, r in ipairs(sel) do set[r] = true end
+        end
+        Config.stealRarities = set
+    end,
+})
+FarmSub:AddInput({ Name = "Steal Min Weight", Default = "0", Placeholder = "0", Flag = "bs_steal_minwt", Callback = function(v)
+    Config.stealMinWeight = tonumber(v) or 0
+end })
+FarmSub:AddSlider({ Name = "Steal Max Distance", Min = 200, Max = 3000, Default = 700, Rounding = 0, Flag = "bs_steal_maxdist", Callback = function(v)
+    Config.stealMaxDist = v
 end })
 
 BaseSub:AddSection("Base")
-BaseSub:AddToggle({ Name = "Auto Place", Description = "Place animals on your own plot", Default = false, Flag = "bs_auto_place", Callback = function(v)
+BaseSub:AddToggle({ Name = "Auto Place", Default = false, Flag = "bs_auto_place", Callback = function(v)
     Config.autoPlace = v
 end })
-BaseSub:AddToggle({ Name = "Auto Treadmill", Description = "Stand on your own treadmill", Default = false, Flag = "bs_auto_treadmill", Callback = function(v)
+BaseSub:AddToggle({ Name = "Auto Treadmill", Default = false, Flag = "bs_auto_treadmill", Callback = function(v)
     Config.autoTreadmill = v
     if v and Config.autoBreak then
         Config.autoBreak = false
         if notifyHub then notifyHub({ Title = "Break and Steal", Content = "Auto Break turned off (conflicts with Auto Treadmill)", Type = "warning", Duration = 3 }) end
     end
 end })
-BaseSub:AddToggle({ Name = "Auto Sell", Description = "Sell animals when the plot is full", Default = false, Flag = "bs_auto_sell", Callback = function(v)
+BaseSub:AddToggle({ Name = "Auto Sell", Default = false, Flag = "bs_auto_sell", Callback = function(v)
     Config.autoSell = v
 end })
-BaseSub:AddToggle({ Name = "Auto Upgrade Plot", Description = "Keep upgrading the plot when cash is enough", Default = false, Flag = "bs_auto_upgrade", Callback = function(v)
+BaseSub:AddToggle({ Name = "Auto Upgrade Plot", Default = false, Flag = "bs_auto_upgrade", Callback = function(v)
     Config.autoUpgradePlot = v
 end })
 BaseSub:AddSection("Shop")
-BaseSub:AddToggle({ Name = "Auto Shop", Description = "Buy & equip the highest affordable pickaxe + trail", Default = false, Flag = "bs_auto_shop", Callback = function(v)
+BaseSub:AddToggle({ Name = "Auto Shop", Default = false, Flag = "bs_auto_shop", Callback = function(v)
     Config.autoShop = v
 end })
 
 RewardSub:AddSection("Claim")
-RewardSub:AddToggle({ Name = "Auto Claim Reward", Description = "Claim ready Index (collection) rewards", Default = false, Flag = "bs_auto_claim", Callback = function(v)
+RewardSub:AddToggle({ Name = "Auto Claim Reward", Default = false, Flag = "bs_auto_claim", Callback = function(v)
     Config.autoClaim = v
     if v then
         task.spawn(function()
@@ -1272,7 +1505,7 @@ RewardSub:AddToggle({ Name = "Auto Claim Reward", Description = "Claim ready Ind
 end })
 
 BatSub:AddSection("Kill Aura")
-BatSub:AddToggle({ Name = "Auto Swing", Description = "Auto hit the nearest player with the bat (close range)", Default = false, Flag = "bs_auto_swing", Callback = function(v)
+BatSub:AddToggle({ Name = "Auto Swing", Default = false, Flag = "bs_auto_swing", Callback = function(v)
     Config.batAura = v
     if v then
         if Config.autoBreak then
@@ -1283,14 +1516,14 @@ BatSub:AddToggle({ Name = "Auto Swing", Description = "Auto hit the nearest play
 end })
 
 PlayerSub:AddSection("Speed")
-PlayerSub:AddToggle({ Name = "WalkSpeed", Description = "Keep speed value close to your natural game speed", Default = false, Flag = "bs_walkspeed", Callback = function(v)
+PlayerSub:AddToggle({ Name = "WalkSpeed", Default = false, Flag = "bs_walkspeed", Callback = function(v)
     Config.speedOn = v
 end })
 PlayerSub:AddSlider({ Name = "Speed Value", Min = 16, Max = 200, Default = 60, Rounding = 0, Flag = "bs_speed_val", Callback = function(v)
     Config.speedVal = v
 end })
 PlayerSub:AddSection("Anti AFK")
-PlayerSub:AddToggle({ Name = "Anti-AFK", Description = "Jump periodically to avoid kicks", Default = false, Flag = "bs_antiafk", Callback = function(v)
+PlayerSub:AddToggle({ Name = "Anti-AFK", Default = false, Flag = "bs_antiafk", Callback = function(v)
     Config.antiAFK = v
 end })
 
@@ -1319,7 +1552,7 @@ end
 TpSub:AddButton({ Name = "Teleport to Base", Primary = false, Callback = function()
     tpToBase()
 end })
-TpSub:AddToggle({ Name = "Q Key to Base", Description = "Press Q anytime to teleport back to base", Default = true, Flag = "bs_tp_q", Callback = function(v)
+TpSub:AddToggle({ Name = "Q Key to Base", Default = true, Flag = "bs_tp_q", Callback = function(v)
     Config.tpKeyQ = v
 end })
 TpSub:AddButton({ Name = "Teleport to Nearest Egg", Primary = false, Callback = function()
@@ -1348,7 +1581,6 @@ TpSub:AddSection("Zone")
 local selectedZone = ""
 TpSub:AddDropdown({
     Name = "Zone",
-    Description = "Which zone to teleport to",
     Options = ZONE_LABELS,
     Default = "",
     Flag = "bs_tp_zone",
@@ -1400,7 +1632,7 @@ do
 end
 
 ESPSub:AddSection("ESP")
-ESPSub:AddToggle({ Name = "ESP Eggs", Description = "Highlight + label value & egg type", Default = false, Flag = "bs_esp_eggs", Callback = function(v)
+ESPSub:AddToggle({ Name = "ESP Eggs", Default = false, Flag = "bs_esp_eggs", Callback = function(v)
     Config.espEggs = v
     if not v then
         for _, inst in ipairs(workspace:GetDescendants()) do
@@ -1410,7 +1642,7 @@ ESPSub:AddToggle({ Name = "ESP Eggs", Description = "Highlight + label value & e
         end
     end
 end })
-ESPSub:AddToggle({ Name = "ESP Animals", Description = "Highlight wild animals you can steal", Default = false, Flag = "bs_esp_animals", Callback = function(v)
+ESPSub:AddToggle({ Name = "ESP Animals", Default = false, Flag = "bs_esp_animals", Callback = function(v)
     Config.espAnimals = v
     if not v then
         local ap = workspace:FindFirstChild("AnimalPickups")
@@ -1455,6 +1687,17 @@ end })
 pcall(function() Library:LoadConfig("default") end)
 pcall(function()
     Config.breakZones = zoneSetFromList(Library:GetFlag("bs_break_zones"))
+end)
+pcall(function()
+    local sel = Library:GetFlag("bs_steal_rarities")
+    local set = {}
+    if type(sel) == "table" then
+        for _, r in ipairs(sel) do set[r] = true end
+    end
+    Config.stealRarities = set
+    Config.stealMinWeight = tonumber(Library:GetFlag("bs_steal_minwt")) or 0
+    Config.stealMaxDist = tonumber(Library:GetFlag("bs_steal_maxdist")) or 700
+    Config.dmgMult = tonumber(Library:GetFlag("bs_dmg_mult")) or 1
 end)
 pcall(refreshConfigList)
 
