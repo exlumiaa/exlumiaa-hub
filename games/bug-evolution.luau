@@ -263,34 +263,6 @@ if not _G._hubKeyValidated then
     _G._hubKeyValidated = true
 end
 
-local _G_TOMB = "_ _bugEvoTomb"
-local _G_ALIVE = "_ _bugEvoAlive"
-local _G_CONFIG = "_ _bugEvoConfig"
-
-do
-    local alive = rawget(_G, _G_ALIVE)
-    if alive == true then
-        rawset(_G, _G_TOMB, true)
-        task.wait(0.6)
-    end
-    rawset(_G, _G_TOMB, false)
-    rawset(_G, _G_ALIVE, true)
-end
-
-do
-    pcall(function()
-        for _, gui in ipairs(game:GetService("CoreGui"):GetChildren()) do
-            if gui:IsA("ScreenGui") and gui.Name == "ExlumiaaHub" then gui:Destroy() end
-        end
-    end)
-    pcall(function()
-        local pg = LP:FindFirstChild("PlayerGui") or LP:WaitForChild("PlayerGui")
-        for _, gui in ipairs(pg:GetChildren()) do
-            if gui:IsA("ScreenGui") and gui.Name == "ExlumiaaHub" then gui:Destroy() end
-        end
-    end)
-end
-
 local Library = nil
 task.spawn(function()
     local ok, ret = pcall(function()
