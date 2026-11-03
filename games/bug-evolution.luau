@@ -23,6 +23,246 @@ local VirtualUser = game:GetService("VirtualUser")
 local Lighting = game:GetService("Lighting")
 local LP = Players.LocalPlayer
 
+-- ================================================================
+-- KEY SYSTEM
+-- ================================================================
+if not _G._hubKeyValidated then
+    local PUSL_SERVICE_ID = "exlumiaa"
+    local PUSL_LIB_URL = "https://secure.pandauth.com/pv4/lib"
+    local KEYSYSTEM_STORE_PATH = "ExlumiaHub/panda_key_bug_evolution.txt"
+    local PUSL = nil
+
+    local function pxLoad()
+        if PUSL then return true end
+        local okGet, src = pcall(function() return game:HttpGet(PUSL_LIB_URL) end)
+        if not okGet or type(src) ~= "string" or #src == 0 then return false end
+        local chunk = loadstring(src)
+        if type(chunk) ~= "function" then return false end
+        local okCall, lib = pcall(chunk)
+        if not okCall or type(lib) ~= "table" or type(lib.configure) ~= "function" then return false end
+        PUSL = lib
+        local okCfg = pcall(function()
+            PUSL.configure({
+                serviceId = PUSL_SERVICE_ID,
+                debug = false,
+                kickOnDetect = false,
+            })
+        end)
+        if not okCfg then PUSL = nil; return false end
+        return true
+    end
+
+    local function ksReadStore()
+        if type(isfile) == "function" and isfile(KEYSYSTEM_STORE_PATH) then
+            local okData, data = pcall(readfile, KEYSYSTEM_STORE_PATH)
+            if okData and type(data) == "string" then
+                local key = string.gsub(string.sub(data, 1, 80), "%s+", "")
+                if #key > 0 then return key end
+            end
+        end
+        return nil
+    end
+
+    local function ksWriteStore(key)
+        if type(writefile) == "function" then
+            return pcall(writefile, KEYSYSTEM_STORE_PATH, tostring(key))
+        end
+        return false
+    end
+
+    local function ksValidate(key)
+        if not pxLoad() then return false, "Could not load Panda library (check internet)" end
+        for attempt = 1, 4 do
+            local okCall, ok, reason = pcall(function() return PUSL.validateEx(tostring(key)) end)
+            if not okCall then break end
+            if ok then return true, "" end
+            if reason == "INVALID_KEY" or reason == "NO_KEY" or reason == "NO_SERVICE" then
+                return false, "Invalid / expired / wrong device key"
+            end
+            task.wait(attempt * 1.5)
+        end
+        return false, "Network / server error"
+    end
+
+    local function ksGetKeyLink()
+        if not pxLoad() then return nil end
+        local ok, link = pcall(function() return PUSL.getKeyUrl() end)
+        if ok and type(link) == "string" and #link > 0 then return link end
+        return nil
+    end
+
+    local function ksShowGate(onSuccess)
+        local pg = LP:FindFirstChild("PlayerGui") or LP:WaitForChild("PlayerGui")
+        local old = pg:FindFirstChild("BugEvolutionKeyGate")
+        if old then old:Destroy() end
+
+        local sc = Instance.new("ScreenGui")
+        sc.Name = "BugEvolutionKeyGate"
+        sc.ResetOnSpawn = false
+        sc.IgnoreGuiInset = true
+        sc.DisplayOrder = 998
+        sc.Parent = pg
+
+        local accent = Color3.fromRGB(120, 96, 255)
+        local accent2 = Color3.fromRGB(180, 160, 255)
+
+        local overlay = Instance.new("Frame")
+        overlay.Size = UDim2.fromScale(1, 1)
+        overlay.BackgroundColor3 = Color3.fromRGB(9, 10, 15)
+        overlay.BackgroundTransparency = 0.1
+        overlay.BorderSizePixel = 0
+        overlay.Parent = sc
+
+        local card = Instance.new("Frame")
+        card.Name = "Card"
+        card.AnchorPoint = Vector2.new(0.5, 0.5)
+        card.Position = UDim2.fromScale(0.5, 0.5)
+        card.Size = UDim2.fromOffset(360, 330)
+        card.BackgroundColor3 = Color3.fromRGB(18, 19, 27)
+        card.BorderSizePixel = 0
+        card.Parent = sc
+        local cardc = Instance.new("UICorner"); cardc.CornerRadius = UDim.new(0, 16); cardc.Parent = card
+        local cardStroke = Instance.new("UIStroke"); cardStroke.Color = accent; cardStroke.Transparency = 0.6; cardStroke.Thickness = 1; cardStroke.Parent = card
+
+        local title = Instance.new("TextLabel")
+        title.Size = UDim2.new(1, 0, 0, 42)
+        title.Position = UDim2.fromOffset(0, 20)
+        title.BackgroundTransparency = 1
+        title.Text = "Bug Evolution"
+        title.Font = Enum.Font.GothamBold
+        title.TextSize = 22
+        title.TextColor3 = Color3.fromRGB(240, 242, 250)
+        title.Parent = card
+        local titleGrad = Instance.new("UIGradient"); titleGrad.Rotation = -8; titleGrad.Color = ColorSequence.new(accent, Color3.fromRGB(220, 235, 255)); titleGrad.Parent = title
+
+        local subtitle = Instance.new("TextLabel")
+        subtitle.Size = UDim2.new(1, 0, 0, 16)
+        subtitle.Position = UDim2.fromOffset(0, 62)
+        subtitle.BackgroundTransparency = 1
+        subtitle.Text = "Enter your key to unlock"
+        subtitle.Font = Enum.Font.Gotham
+        subtitle.TextSize = 12
+        subtitle.TextColor3 = Color3.fromRGB(150, 155, 172)
+        subtitle.Parent = card
+
+        local status = Instance.new("TextLabel")
+        status.Size = UDim2.new(1, -32, 0, 40)
+        status.Position = UDim2.fromOffset(16, 78)
+        status.BackgroundTransparency = 1
+        status.Text = ""
+        status.Font = Enum.Font.Gotham
+        status.TextSize = 12
+        status.TextColor3 = accent2
+        status.TextWrapped = true
+        status.Parent = card
+
+        local keyBox = Instance.new("TextBox")
+        keyBox.Name = "KeyBox"
+        keyBox.Text = ""
+        keyBox.AnchorPoint = Vector2.new(0.5, 0.5)
+        keyBox.Position = UDim2.fromOffset(180, 152)
+        keyBox.Size = UDim2.new(0, 312, 0, 42)
+        keyBox.BackgroundColor3 = Color3.fromRGB(27, 29, 40)
+        keyBox.BorderSizePixel = 0
+        keyBox.Font = Enum.Font.GothamBold
+        keyBox.TextSize = 16
+        keyBox.TextColor3 = Color3.fromRGB(240, 242, 250)
+        keyBox.ClearTextOnFocus = false
+        keyBox.Parent = card
+        local keyBoxc = Instance.new("UICorner"); keyBoxc.CornerRadius = UDim.new(0, 10); keyBoxc.Parent = keyBox
+
+        local function makeButton(text, posX, color)
+            local btn = Instance.new("TextButton")
+            btn.AnchorPoint = Vector2.new(0.5, 0.5)
+            btn.Position = UDim2.fromOffset(posX, 220)
+            btn.Size = UDim2.new(0, 140, 0, 42)
+            btn.BackgroundColor3 = color
+            btn.BorderSizePixel = 0
+            btn.Font = Enum.Font.GothamBold
+            btn.Text = text
+            btn.TextSize = 14
+            btn.TextColor3 = Color3.fromRGB(255, 255, 255)
+            btn.Parent = card
+            local btnc = Instance.new("UICorner"); btnc.CornerRadius = UDim.new(0, 10); btnc.Parent = btn
+            return btn
+        end
+
+        local getBtn = makeButton("Get Key", 90, accent)
+        getBtn.Name = "GetKeyBtn"
+        local verifyBtn = makeButton("Verify", 270, Color3.fromRGB(52, 58, 82))
+        verifyBtn.Name = "VerifyBtn"
+
+        local hint = Instance.new("TextLabel")
+        hint.Size = UDim2.new(1, -32, 0, 30)
+        hint.Position = UDim2.fromOffset(16, 268)
+        hint.BackgroundTransparency = 1
+        hint.Text = "Open the link, complete the ad, then paste your key."
+        hint.Font = Enum.Font.Gotham
+        hint.TextSize = 11
+        hint.TextColor3 = Color3.fromRGB(120, 124, 140)
+        hint.TextWrapped = true
+        hint.Parent = card
+
+        local done = false
+        getBtn.MouseButton1Click:Connect(function()
+            local link = ksGetKeyLink()
+            if link then
+                pcall(setclipboard, link)
+                status.Text = "Get key link copied to clipboard."
+            else
+                status.Text = "Could not fetch get-key link."
+            end
+        end)
+        verifyBtn.MouseButton1Click:Connect(function()
+            if done then return end
+            local key = string.gsub(keyBox.Text, "%s+", "")
+            if key == "" then status.Text = "Enter your key first." return end
+            status.Text = "Verifying..."
+            task.spawn(function()
+                local okVal, msg = ksValidate(key)
+                if done then return end
+                if okVal then
+                    ksWriteStore(key)
+                    status.Text = "Key verified."
+                    done = true
+                    task.wait(0.35)
+                    sc:Destroy()
+                    onSuccess()
+                else
+                    status.Text = "Failed: " .. msg
+                end
+            end)
+        end)
+
+        return sc
+    end
+
+    do
+        local storeKey = ksReadStore()
+        local unlocked = false
+        if storeKey then
+            local okVal = ksValidate(storeKey)
+            if okVal then unlocked = true end
+        end
+        if not unlocked then
+            local gateDone = false
+            local gui = ksShowGate(function() gateDone = true end)
+
+            while not gateDone do
+                if rawget(_G, _G_TOMB) then
+                    pcall(function() gui:Destroy() end)
+                    return
+                end
+                task.wait(0.1)
+            end
+            if gui and gui.Parent then
+                pcall(function() gui:Destroy() end)
+            end
+        end
+    end
+    _G._hubKeyValidated = true
+end
+
 local _G_TOMB = "_ _bugEvoTomb"
 local _G_ALIVE = "_ _bugEvoAlive"
 local _G_CONFIG = "_ _bugEvoConfig"
