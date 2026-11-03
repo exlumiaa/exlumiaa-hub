@@ -23,9 +23,20 @@ local VirtualUser = game:GetService("VirtualUser")
 local Lighting = game:GetService("Lighting")
 local LP = Players.LocalPlayer
 
--- ================================================================
--- KEY SYSTEM
--- ================================================================
+local _G_TOMB = "_ _bugEvoTomb"
+local _G_ALIVE = "_ _bugEvoAlive"
+local _G_CONFIG = "_ _bugEvoConfig"
+
+do
+    local alive = rawget(_G, _G_ALIVE)
+    if alive == true then
+        rawset(_G, _G_TOMB, true)
+        task.wait(0.6)
+    end
+    rawset(_G, _G_TOMB, false)
+    rawset(_G, _G_ALIVE, true)
+end
+
 if not _G._hubKeyValidated then
     local PUSL_SERVICE_ID = "exlumiaa"
     local PUSL_LIB_URL = "https://secure.pandauth.com/pv4/lib"
@@ -261,6 +272,22 @@ if not _G._hubKeyValidated then
         end
     end
     _G._hubKeyValidated = true
+end
+
+
+
+do
+    pcall(function()
+        for _, gui in ipairs(game:GetService("CoreGui"):GetChildren()) do
+            if gui:IsA("ScreenGui") and gui.Name == "ExlumiaaHub" then gui:Destroy() end
+        end
+    end)
+    pcall(function()
+        local pg = LP:FindFirstChild("PlayerGui") or LP:WaitForChild("PlayerGui")
+        for _, gui in ipairs(pg:GetChildren()) do
+            if gui:IsA("ScreenGui") and gui.Name == "ExlumiaaHub" then gui:Destroy() end
+        end
+    end)
 end
 
 local Library = nil
@@ -1168,7 +1195,7 @@ PlayerSub:AddButton({
         Window:Notify({
             Title = "Stats",
             Content = string.format(
-                "Level %s  ·  XP %s/%s  ·  Stage %s  ·  Coins %s  ·  Zone %s",
+                "Level %s  ·╖  XP %s/%s  ·╖  Stage %s  ·╖  Coins %s  ·╖  Zone %s",
                 tostring(LP:GetAttribute("Level")),
                 tostring(LP:GetAttribute("XP")),
                 tostring(LP:GetAttribute("XPNeed")),
