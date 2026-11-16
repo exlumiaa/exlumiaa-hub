@@ -13,6 +13,7 @@ local RS = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
 local UIS = game:GetService("UserInputService")
 local LP = Players.LocalPlayer
+if tostring(game.GameId) ~= "10773416193" then return end
 
 local GEN = (tonumber(getgenv().__voxelWarsGen) or 0) + 1
 getgenv().__voxelWarsGen = GEN
@@ -1007,7 +1008,16 @@ end
 -- ================================================================
 -- UI
 -- ================================================================
-local Library = nil
+local function createHubUI(firstPass)
+    if stale() then return end
+    if firstPass then
+        pcall(cleardrawcache)
+    else
+        cleanupGui("ExlumiaaHub")
+    end
+    if fovCircle then killObj(fovCircle); fovCircle = nil end
+
+    local Library = nil
 task.spawn(function()
     local ok, ret = pcall(function()
         return loadstring(game:HttpGet("https://raw.githubusercontent.com/exlumiaa/exlumiaa-hub/main/Oxidelib.lua"))()
@@ -1358,6 +1368,7 @@ Misc:AddButton({
         getgenv().__voxelWarsGen = (tonumber(getgenv().__voxelWarsGen) or 0) + 1
         disconnectAll()
         pcall(function() RunService:UnbindFromRenderStep("VoxelWarsFrame") end)
+        pcall(function() RunService:UnbindFromRenderStep("VoxelWarsWatchdog") end)
         for _, e in pairs(espCache) do destroyEntry(e) end
         espCache = {}
         for _, d in pairs(objCache) do killObj(d) end
@@ -1373,6 +1384,28 @@ Misc:AddButton({
         print("[ExlumiaaHub] Voxel Wars unloaded")
     end,
 })
+
+end
+
+createHubUI(true)
+
+-- This game wipes the client's CoreGui/PlayerGui on round and lobby transitions,
+-- which destroys the hub window. Rebuild it automatically when it's gone.
+local watchdogBusy = false
+RunService:UnbindFromRenderStep("VoxelWarsWatchdog")
+RunService:BindToRenderStep("VoxelWarsWatchdog", Enum.RenderPriority.First.Value, function()
+    if stale() or watchdogBusy then return end
+    local rg = game:GetService("CoreGui").RobloxGui
+    local alive = rg and rg:FindFirstChild("ExlumiaaHub") ~= nil
+    if not alive then
+        local pg = LP:FindFirstChild("PlayerGui")
+        if pg and pg:FindFirstChild("ExlumiaaHub") then alive = true end
+    end
+    if alive then return end
+    watchdogBusy = true
+    createHubUI(false)
+    watchdogBusy = false
+end)
 
 -- ================================================================
 -- KEY HOLD + LOAD
