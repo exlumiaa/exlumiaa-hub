@@ -13,14 +13,16 @@ local KEYSTORE_PATH = "ExlumiaHub/panda_key.txt"
 
 -- ==================== GAME TABLE ====================
 -- GAMES is loaded from games.json at runtime so new games can be added
--- without touching the loader.
+-- without touching the loader. URLs carry a cache-buster because Roblox /
+-- executors may serve a stale games.json otherwise (new games go undetected).
+local BUST = "?cb=" .. tostring(math.random(1, 1000000000))
 local GAMES = {}
 
 local HttpService = game:GetService("HttpService")
 
 do
     local okGet, src = pcall(function()
-        return game:HttpGet(BASE_URL .. "games.json")
+        return game:HttpGet(BASE_URL .. "games.json" .. BUST)
     end)
     if okGet and type(src) == "string" and #src > 0 then
         local okDec, data = pcall(function()
@@ -307,7 +309,7 @@ local function loadGameScript(gameId)
         warn("[Exlumia] Game not supported: " .. gameId)
         return false
     end
-    local url = BASE_URL .. path
+    local url = BASE_URL .. path .. BUST
     local ok, src = pcall(function()
         return game:HttpGet(url)
     end)
