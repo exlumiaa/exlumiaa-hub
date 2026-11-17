@@ -8,6 +8,8 @@
 --
 -- Key system: Panda Auth (exlumiaa).
 
+if tostring(game.GameId) ~= "10773416193" then return end
+
 local Players = game:GetService("Players")
 local RS = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
