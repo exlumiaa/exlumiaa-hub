@@ -15,7 +15,6 @@ local RS = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
 local UIS = game:GetService("UserInputService")
 local LP = Players.LocalPlayer
-if tostring(game.GameId) ~= "10773416193" then return end
 
 local GEN = (tonumber(getgenv().__voxelWarsGen) or 0) + 1
 getgenv().__voxelWarsGen = GEN
@@ -122,7 +121,14 @@ if not _G._hubKeyValidated then
 
     local function ksShowGate(onSuccess)
         local pg = LP:FindFirstChild("PlayerGui") or LP:WaitForChild("PlayerGui")
-        local old = pg:FindFirstChild("VoxelWarsKeyGate")
+        -- Voxel Wars deletes foreign ScreenGuis out of PlayerGui within a frame,
+        -- so the gate has to live in CoreGui or it vanishes before a key is typed.
+        local host = pg
+        pcall(function()
+            local cg = game:GetService("CoreGui")
+            if cg then host = cg end
+        end)
+        local old = host:FindFirstChild("VoxelWarsKeyGate")
         if old then old:Destroy() end
 
         local sc = Instance.new("ScreenGui")
@@ -130,7 +136,8 @@ if not _G._hubKeyValidated then
         sc.ResetOnSpawn = false
         sc.IgnoreGuiInset = true
         sc.DisplayOrder = 998
-        sc.Parent = pg
+        local okParent = pcall(function() sc.Parent = host end)
+        if not okParent or not sc.Parent then sc.Parent = pg end
 
         local accent = Color3.fromRGB(255, 176, 58)
         local accent2 = Color3.fromRGB(255, 214, 150)
@@ -286,6 +293,9 @@ if not _G._hubKeyValidated then
                 if stale() then
                     pcall(function() gui:Destroy() end)
                     return
+                end
+                if not gui or not gui.Parent then
+                    gui = ksShowGate(function() gateDone = true end)
                 end
                 task.wait(0.1)
             end
