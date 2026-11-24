@@ -118,11 +118,18 @@ if not _G._hubKeyValidated then
         return false, "Network / server error"
     end
 
+    local KEY_PAGE_URL = "https://pandauth.com/getkey/" .. PUSL_SERVICE_ID
+
     local function ksGetKeyLink()
-        if not pxLoad() then return nil end
-        local ok, link = pcall(function() return PUSL.getKeyUrl() end)
-        if ok and type(link) == "string" and #link > 0 then return link end
-        return nil
+        if pxLoad() then
+            local ok, link = pcall(function() return PUSL.getKeyUrl() end)
+            if ok and type(link) == "string" and #link > 0 then
+                -- the library hands back a site-relative path, prefix it before it goes out
+                if link:sub(1, 1) == "/" then return "https://pandauth.com" .. link end
+                return link
+            end
+        end
+        return KEY_PAGE_URL
     end
 
     local function ksShowGate(onSuccess)
